@@ -4,7 +4,7 @@ from app.schemas.draw import DrawRequest, DrawResponse, SpeechToTextResponse, Tr
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationNotConfiguredError,
-    generate_image_url,
+    generate_image as create_image_from_prompt,
 )
 from app.services.speech_recognition import (
     SpeechRecognitionError,
@@ -22,7 +22,7 @@ async def _build_draw_response(
     height: int = 512,
 ) -> DrawResponse:
     try:
-        image_url = await generate_image_url(prompt, width=width, height=height)
+        image_url, message = await create_image_from_prompt(prompt, width=width, height=height)
     except ImageGenerationNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImageGenerationError as exc:
@@ -31,7 +31,7 @@ async def _build_draw_response(
     return DrawResponse(
         prompt=prompt,
         image_url=image_url,
-        message="图像已生成",
+        message=message,
     )
 
 

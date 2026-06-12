@@ -17,11 +17,14 @@ class Settings(BaseSettings):
     speech_language: str | None = "zh"
     speech_timeout_seconds: float = 60.0
 
-    # 图像生成（OpenAI Images API / DALL·E）
+    # 图像生成（auto=有 Key 用 OpenAI，否则 Pollinations 免费服务）
+    image_provider: str = "auto"
     image_api_key: str | None = None
     image_model: str = "dall-e-3"
     image_quality: str = "standard"
     image_timeout_seconds: float = 120.0
+    pollinations_base_url: str = "https://image.pollinations.ai"
+    pollinations_model: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -30,7 +30,8 @@
 | 服务 | 用途 | 步骤 |
 |------|------|------|
 | [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) | 语音转文字 | 步骤 2 |
-| [OpenAI Images API (DALL·E)](https://platform.openai.com/docs/api-reference/images) | 文本生成图像 | 步骤 3 |
+| [OpenAI Images API (DALL·E)](https://platform.openai.com/docs/api-reference/images) | 文本生成图像（需 API Key） | 步骤 3 |
+| [Pollinations.ai](https://pollinations.ai/) | 免费文本生成图像（无需 Key） | 步骤 4 |
 
 ## 原创功能
 
@@ -40,7 +41,8 @@
 |------|------|
 | 语音录音流程 | 前端使用浏览器 `MediaRecorder` 采集麦克风，录音结束后上传后端 |
 | 语音识别编排 | 后端 `app/services/speech_recognition.py` 封装 Whisper API 调用、错误处理与配置读取 |
-| 图像生成编排 | 后端 `app/services/image_generation.py` 封装 DALL·E API 调用、尺寸映射与错误处理 |
+| 图像生成编排 | 后端 `app/services/image_generation.py` 统一调度 OpenAI / Pollinations，按配置自动选路 |
+| Pollinations 免费绘图 | 后端 `app/services/pollinations_image.py` 构建免费图片 URL，无 API Key 即可使用 |
 | 占位图像生成 | 后端 `app/services/placeholder_image.py` 步骤 1 占位图（步骤 3 后由真实生成替代） |
 | API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、图像生成请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
@@ -50,6 +52,7 @@
 - [x] **步骤 1**：后端占位图像生成（`/api/transcript`、`/api/generate` 返回可预览 SVG）
 - [x] **步骤 2**：接入 OpenAI Whisper 语音识别（`/api/speech-to-text`）
 - [x] **步骤 3**：接入 OpenAI DALL·E 图像生成（`/api/transcript`、`/api/generate`）
+- [x] **步骤 4**：接入 Pollinations 免费图像生成（无 API Key 自动启用）
 
 ## 项目结构
 
@@ -83,7 +86,7 @@ cd backend
 # 安装依赖
 pip install -r requirements.txt
 
-# 复制环境变量并填写 OPENAI_API_KEY
+# 复制环境变量（无 API Key 也可使用 Pollinations 免费绘图）
 copy .env.example .env
 
 # 启动服务
@@ -122,12 +125,20 @@ SPEECH_LANGUAGE=zh
 | `SPEECH_LANGUAGE` | `zh` | 语言提示，提升中文识别准确率 |
 | `SPEECH_TIMEOUT_SECONDS` | `60` | 请求超时（秒） |
 
-## 图像生成配置（步骤 3）
+## 图像生成配置（步骤 3 / 4）
 
-默认复用步骤 2 的 `OPENAI_API_KEY`，也可单独配置：
+**无 API Key 也能画图**：默认 `IMAGE_PROVIDER=auto`，未配置 Key 时自动使用 Pollinations 免费服务。
 
 ```env
+# 免费模式（默认，无需 Key）
+IMAGE_PROVIDER=auto
+
+# 或强制使用 Pollinations
+IMAGE_PROVIDER=pollinations
+
+# 有 OpenAI Key 时自动或手动走 DALL·E
 OPENAI_API_KEY=sk-your-key-here
+IMAGE_PROVIDER=openai
 IMAGE_MODEL=dall-e-3
 IMAGE_QUALITY=standard
 ```
@@ -136,10 +147,13 @@ IMAGE_QUALITY=standard
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
+| `IMAGE_PROVIDER` | `auto` | `auto` / `openai` / `pollinations` |
 | `IMAGE_API_KEY` | （复用 `OPENAI_API_KEY`） | 单独指定图像生成 Key |
-| `IMAGE_MODEL` | `dall-e-3` | 支持 `dall-e-3`、`dall-e-2` |
+| `IMAGE_MODEL` | `dall-e-3` | OpenAI 模型：`dall-e-3`、`dall-e-2` |
 | `IMAGE_QUALITY` | `standard` | DALL·E 3 画质：`standard` / `hd` |
-| `IMAGE_TIMEOUT_SECONDS` | `120` | 请求超时（秒） |
+| `POLLINATIONS_BASE_URL` | `https://image.pollinations.ai` | Pollinations 服务地址 |
+| `POLLINATIONS_MODEL` | （空） | 可选模型，如 `flux` |
+| `IMAGE_TIMEOUT_SECONDS` | `120` | OpenAI 请求超时（秒） |
 
 ## API 概览
 
@@ -147,10 +161,10 @@ IMAGE_QUALITY=standard
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | POST | `/api/speech-to-text` | 上传语音，Whisper 识别为文本 |
-| POST | `/api/transcript` | 根据文本调用 DALL·E 生成图像 |
-| POST | `/api/generate` | 根据提示词调用 DALL·E 生成图像 |
+| POST | `/api/transcript` | 根据文本生成图像（OpenAI 或 Pollinations） |
+| POST | `/api/generate` | 根据提示词生成图像（OpenAI 或 Pollinations） |
 
 ## 下一步
 
+- 步骤 5：接入浏览器免费语音识别（Web Speech API）
 - 增加 WebSocket 流式识别与生成进度
-- 支持更多图像生成服务商（Stable Diffusion 等）
