@@ -12,7 +12,7 @@
 | [Uvicorn](https://www.uvicorn.org/) | ASGI 服务器 |
 | [python-multipart](https://github.com/Kludex/python-multipart) | 上传语音文件解析 |
 | [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | 环境变量与配置管理 |
-| [httpx](https://www.python-httpx.org/) | 调用 OpenAI Whisper 语音识别 API |
+| [httpx](https://www.python-httpx.org/) | 调用 OpenAI Whisper 与 DALL·E API |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | 加载 `.env` 配置 |
 
 ### 前端（Node.js）
@@ -30,6 +30,7 @@
 | 服务 | 用途 | 步骤 |
 |------|------|------|
 | [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) | 语音转文字 | 步骤 2 |
+| [OpenAI Images API (DALL·E)](https://platform.openai.com/docs/api-reference/images) | 文本生成图像 | 步骤 3 |
 
 ## 原创功能
 
@@ -39,7 +40,8 @@
 |------|------|
 | 语音录音流程 | 前端使用浏览器 `MediaRecorder` 采集麦克风，录音结束后上传后端 |
 | 语音识别编排 | 后端 `app/services/speech_recognition.py` 封装 Whisper API 调用、错误处理与配置读取 |
-| 占位图像生成 | 后端 `app/services/placeholder_image.py` 根据提示词动态生成 SVG 占位预览图 |
+| 图像生成编排 | 后端 `app/services/image_generation.py` 封装 DALL·E API 调用、尺寸映射与错误处理 |
+| 占位图像生成 | 后端 `app/services/placeholder_image.py` 步骤 1 占位图（步骤 3 后由真实生成替代） |
 | API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、图像生成请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
 
@@ -47,7 +49,7 @@
 
 - [x] **步骤 1**：后端占位图像生成（`/api/transcript`、`/api/generate` 返回可预览 SVG）
 - [x] **步骤 2**：接入 OpenAI Whisper 语音识别（`/api/speech-to-text`）
-- [ ] 步骤 3：接入真实 AI 图像生成
+- [x] **步骤 3**：接入 OpenAI DALL·E 图像生成（`/api/transcript`、`/api/generate`）
 
 ## 项目结构
 
@@ -120,16 +122,35 @@ SPEECH_LANGUAGE=zh
 | `SPEECH_LANGUAGE` | `zh` | 语言提示，提升中文识别准确率 |
 | `SPEECH_TIMEOUT_SECONDS` | `60` | 请求超时（秒） |
 
+## 图像生成配置（步骤 3）
+
+默认复用步骤 2 的 `OPENAI_API_KEY`，也可单独配置：
+
+```env
+OPENAI_API_KEY=sk-your-key-here
+IMAGE_MODEL=dall-e-3
+IMAGE_QUALITY=standard
+```
+
+可选配置：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IMAGE_API_KEY` | （复用 `OPENAI_API_KEY`） | 单独指定图像生成 Key |
+| `IMAGE_MODEL` | `dall-e-3` | 支持 `dall-e-3`、`dall-e-2` |
+| `IMAGE_QUALITY` | `standard` | DALL·E 3 画质：`standard` / `hd` |
+| `IMAGE_TIMEOUT_SECONDS` | `120` | 请求超时（秒） |
+
 ## API 概览
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | POST | `/api/speech-to-text` | 上传语音，Whisper 识别为文本 |
-| POST | `/api/transcript` | 根据文本生成图像 |
-| POST | `/api/generate` | 根据提示词生成图像 |
+| POST | `/api/transcript` | 根据文本调用 DALL·E 生成图像 |
+| POST | `/api/generate` | 根据提示词调用 DALL·E 生成图像 |
 
 ## 下一步
 
-- 接入图像生成 API（如 Stable Diffusion、DALL·E 等）
 - 增加 WebSocket 流式识别与生成进度
+- 支持更多图像生成服务商（Stable Diffusion 等）

@@ -9,6 +9,21 @@ export interface SpeechToTextResponse {
   confidence?: number | null
 }
 
+async function readApiError(response: Response, fallback: string): Promise<Error> {
+  try {
+    const data = (await response.json()) as { detail?: string | Array<{ msg?: string }> }
+    if (typeof data.detail === 'string' && data.detail.trim()) {
+      return new Error(data.detail)
+    }
+    if (Array.isArray(data.detail) && data.detail[0]?.msg) {
+      return new Error(data.detail[0].msg)
+    }
+  } catch {
+    // ignore parse errors and use fallback
+  }
+  return new Error(fallback)
+}
+
 export async function checkHealth(): Promise<boolean> {
   const response = await fetch('/health')
   if (!response.ok) return false
@@ -26,7 +41,7 @@ export async function speechToText(audioBlob: Blob): Promise<SpeechToTextRespons
   })
 
   if (!response.ok) {
-    throw new Error('语音识别失败')
+    throw await readApiError(response, '语音识别失败')
   }
 
   return response.json()
@@ -40,7 +55,7 @@ export async function generateFromText(text: string): Promise<DrawResponse> {
   })
 
   if (!response.ok) {
-    throw new Error('图像生成失败')
+    throw await readApiError(response, '图像生成失败')
   }
 
   return response.json()

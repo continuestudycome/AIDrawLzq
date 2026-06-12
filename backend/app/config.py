@@ -17,9 +17,19 @@ class Settings(BaseSettings):
     speech_language: str | None = "zh"
     speech_timeout_seconds: float = 60.0
 
+    # 图像生成（OpenAI Images API / DALL·E）
+    image_api_key: str | None = None
+    image_model: str = "dall-e-3"
+    image_quality: str = "standard"
+    image_timeout_seconds: float = 120.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def effective_image_api_key(self) -> str | None:
+        return self.image_api_key or self.openai_api_key
 
 
 settings = Settings()
