@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     pollinations_base_url: str = "https://image.pollinations.ai"
     pollinations_model: str | None = None
 
+    # Stable Horde 免费图像生成（无需注册，匿名 Key）
+    stable_horde_api_key: str = "0000000000"
+    stable_horde_base_url: str = "https://stablehorde.net/api/v2"
+    stable_horde_steps: int = 20
+    stable_horde_poll_interval: float = 3.0
+    stable_horde_max_wait_seconds: float = 180.0
+    stable_horde_models: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -33,6 +41,12 @@ class Settings(BaseSettings):
     @property
     def effective_image_api_key(self) -> str | None:
         return self.image_api_key or self.openai_api_key
+
+    @property
+    def stable_horde_models_list(self) -> list[str]:
+        if not self.stable_horde_models.strip():
+            return []
+        return [model.strip() for model in self.stable_horde_models.split(",") if model.strip()]
 
 
 settings = Settings()

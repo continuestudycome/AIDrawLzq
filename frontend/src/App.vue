@@ -19,7 +19,7 @@ const statusText = computed(() => {
     case 'recording':
       return '正在录音…'
     case 'processing':
-      return '正在识别并生成图像…'
+      return '正在生成图像，免费服务可能需要 1-3 分钟…'
     case 'done':
       return '完成'
     case 'error':

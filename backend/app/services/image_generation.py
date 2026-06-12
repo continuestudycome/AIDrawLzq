@@ -1,11 +1,14 @@
-"""图像生成服务：支持 OpenAI DALL·E 与 Pollinations 免费服务。"""
+"""图像生成服务：支持 OpenAI DALL·E、Stable Horde 与 Pollinations。"""
 
 from __future__ import annotations
 
 import httpx
 
 from app.config import settings
+from app.services.image_fetch import download_image_as_data_url
+from app.services.placeholder_image import build_placeholder_image_data_url
 from app.services.pollinations_image import build_pollinations_image_url
+from app.services.stable_horde_image import StableHordeError, generate_stable_horde_data_url
 
 
 class ImageGenerationError(Exception):
@@ -43,13 +46,12 @@ def resolve_image_provider() -> str:
                 "IMAGE_PROVIDER=openai 但未配置 OPENAI_API_KEY，请在 backend/.env 中设置"
             )
         return "openai"
-    if provider == "pollinations":
-        return "pollinations"
+    if provider in {"pollinations", "stablehorde", "free"}:
+        return provider
 
-    # auto：有 Key 用 OpenAI，否则用 Pollinations 免费服务
     if settings.effective_image_api_key:
         return "openai"
-    return "pollinations"
+    return "free"
 
 
 async def _generate_openai_image_url(
@@ -106,6 +108,53 @@ async def _generate_openai_image_url(
     return str(image_url)
 
 
+async def _try_pollinations_data_url(
+    prompt: str,
+    *,
+    width: int = 512,
+    height: int = 512,
+) -> str | None:
+    try:
+        remote_url = build_pollinations_image_url(prompt, width=width, height=height)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.get(remote_url)
+        if response.status_code >= 400:
+            return None
+        content_type = response.headers.get("content-type", "")
+        if not content_type.startswith("image/"):
+            return None
+        return await download_image_as_data_url(remote_url, timeout_seconds=30.0)
+    except (httpx.RequestError, ValueError):
+        return None
+
+
+async def _generate_free_image_data_url(
+    prompt: str,
+    *,
+    width: int = 512,
+    height: int = 512,
+) -> tuple[str, str]:
+    provider = settings.image_provider.lower().strip()
+
+    if provider == "pollinations":
+        image_url = await _try_pollinations_data_url(prompt, width=width, height=height)
+        if image_url:
+            return image_url, "图像已生成（Pollinations）"
+        raise ImageGenerationError(
+            "Pollinations 服务不可用（可能已需付费 402），请改用 IMAGE_PROVIDER=stablehorde"
+        )
+
+    try:
+        image_url = await generate_stable_horde_data_url(prompt, width=width, height=height)
+        return image_url, "图像已生成（Stable Horde 免费服务，排队可能需要 1-3 分钟）"
+    except StableHordeError as exc:
+        fallback_url = build_placeholder_image_data_url(prompt, width=width, height=height)
+        return (
+            fallback_url,
+            f"Stable Horde 暂不可用：{exc}。已显示占位预览图",
+        )
+
+
 async def generate_image(
     prompt: str,
     *,
@@ -119,12 +168,7 @@ async def generate_image(
         image_url = await _generate_openai_image_url(prompt, width=width, height=height)
         return image_url, "图像已生成（OpenAI DALL·E）"
 
-    try:
-        image_url = build_pollinations_image_url(prompt, width=width, height=height)
-    except ValueError as exc:
-        raise ImageGenerationError(str(exc)) from exc
-
-    return image_url, "图像已生成（Pollinations 免费服务）"
+    return await _generate_free_image_data_url(prompt, width=width, height=height)
 
 
 async def generate_image_url(
