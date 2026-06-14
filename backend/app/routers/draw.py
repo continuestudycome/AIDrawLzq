@@ -1,11 +1,19 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.schemas.draw import DrawRequest, DrawResponse, SpeechToTextResponse, TranscriptRequest
+from app.schemas.draw import (
+    DrawRequest,
+    DrawResponse,
+    OptimizePromptRequest,
+    OptimizePromptResponse,
+    SpeechToTextResponse,
+    TranscriptRequest,
+)
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationNotConfiguredError,
     generate_image as create_image_from_prompt,
 )
+from app.services.prompt_optimizer import PromptOptimizerError, optimize_prompt
 from app.services.speech_recognition import (
     SpeechRecognitionError,
     SpeechRecognitionNotConfiguredError,
@@ -32,6 +40,22 @@ async def _build_draw_response(
         prompt=prompt,
         image_url=image_url,
         message=message,
+    )
+
+
+@router.post("/optimize-prompt", response_model=OptimizePromptResponse)
+async def optimize_prompt_endpoint(payload: OptimizePromptRequest) -> OptimizePromptResponse:
+    """优化提示词，扩展为更适合 AI 绘图的描述。"""
+    try:
+        optimized, message, method = await optimize_prompt(payload.text)
+    except PromptOptimizerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return OptimizePromptResponse(
+        original=payload.text.strip(),
+        optimized=optimized,
+        message=message,
+        method=method,
     )
 
 

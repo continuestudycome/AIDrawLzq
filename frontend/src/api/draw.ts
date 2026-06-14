@@ -9,6 +9,13 @@ export interface SpeechToTextResponse {
   confidence?: number | null
 }
 
+export interface OptimizePromptResponse {
+  original: string
+  optimized: string
+  message: string
+  method: string
+}
+
 async function readApiError(response: Response, fallback: string): Promise<Error> {
   try {
     const data = (await response.json()) as { detail?: string | Array<{ msg?: string }> }
@@ -56,6 +63,20 @@ export async function generateFromText(text: string): Promise<DrawResponse> {
 
   if (!response.ok) {
     throw await readApiError(response, '图像生成失败')
+  }
+
+  return response.json()
+}
+
+export async function optimizePrompt(text: string): Promise<OptimizePromptResponse> {
+  const response = await fetch('/api/optimize-prompt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+
+  if (!response.ok) {
+    throw await readApiError(response, '提示词优化失败')
   }
 
   return response.json()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { checkHealth, generateFromText, speechToText } from './api/draw'
+import { checkHealth, generateFromText, optimizePrompt, speechToText } from './api/draw'
 
 type AppStatus = 'idle' | 'recording' | 'processing' | 'done' | 'error'
 
@@ -10,6 +10,7 @@ const resultMessage = ref('')
 const imageUrl = ref<string | null>(null)
 const errorMessage = ref('')
 const backendOnline = ref(false)
+const isOptimizing = ref(false)
 
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
@@ -29,7 +30,9 @@ const statusText = computed(() => {
   }
 })
 
-const isBusy = computed(() => status.value === 'recording' || status.value === 'processing')
+const isBusy = computed(
+  () => status.value === 'recording' || status.value === 'processing' || isOptimizing.value,
+)
 
 async function startRecording() {
   errorMessage.value = ''
@@ -81,6 +84,24 @@ async function handleRecordingComplete() {
   } catch (error) {
     status.value = 'error'
     errorMessage.value = error instanceof Error ? error.message : '处理失败'
+  }
+}
+
+async function optimizePromptInput() {
+  if (!transcript.value.trim()) return
+
+  isOptimizing.value = true
+  errorMessage.value = ''
+  resultMessage.value = ''
+
+  try {
+    const result = await optimizePrompt(transcript.value.trim())
+    transcript.value = result.optimized
+    resultMessage.value = result.message
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '提示词优化失败'
+  } finally {
+    isOptimizing.value = false
   }
 }
 
@@ -144,9 +165,18 @@ onMounted(async () => {
           />
         </label>
 
-        <button class="primary-button" :disabled="isBusy || !transcript.trim()" @click="generateFromInput">
-          生成图像
-        </button>
+        <div class="action-row">
+          <button
+            class="secondary-button"
+            :disabled="isBusy || !transcript.trim()"
+            @click="optimizePromptInput"
+          >
+            {{ isOptimizing ? '优化中…' : '✨ 优化提示词' }}
+          </button>
+          <button class="primary-button" :disabled="isBusy || !transcript.trim()" @click="generateFromInput">
+            生成图像
+          </button>
+        </div>
 
         <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
         <p v-if="resultMessage" class="hint">{{ resultMessage }}</p>

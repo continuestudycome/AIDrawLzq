@@ -20,3 +20,14 @@ class DrawResponse(BaseModel):
     prompt: str
     image_url: str | None = None
     message: str = "ok"
+
+
+class OptimizePromptRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000, description="待优化的提示词")
+
+
+class OptimizePromptResponse(BaseModel):
+    original: str
+    optimized: str
+    message: str
+    method: str = "rules"

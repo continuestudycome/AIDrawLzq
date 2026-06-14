@@ -47,7 +47,8 @@
 | 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
 | Pollinations URL 构建 | 后端 `app/services/pollinations_image.py` 构建 Pollinations 图片地址（服务已收费时自动跳过） |
 | 占位图像生成 | 后端 `app/services/placeholder_image.py` 在免费服务超时/不可用时返回 SVG 占位图 |
-| API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、图像生成请求及错误解析 |
+| 提示词优化 | 后端 `app/services/prompt_optimizer.py` 扩展简短中文为双语详细提示词；有 OpenAI Key 时可用 AI 优化 |
+| API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
 
 ## 开发进度
@@ -57,6 +58,7 @@
 - [x] **步骤 3**：接入 OpenAI DALL·E 图像生成（`/api/transcript`、`/api/generate`）
 - [x] **步骤 4**：接入 Pollinations 免费图像生成
 - [x] **步骤 4 修复**：Pollinations 收费后改用 Stable Horde，后端转 data URL 修复裂图
+- [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
 - [ ] **步骤 5**：接入浏览器免费语音识别（Web Speech API）
 
 ## 项目结构
@@ -175,10 +177,15 @@ IMAGE_MODEL=dall-e-3
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | POST | `/api/speech-to-text` | 上传语音，Whisper 识别为文本 |
+| POST | `/api/optimize-prompt` | 优化提示词，扩展为更详细的绘图描述 |
 | POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
 | POST | `/api/generate` | 根据提示词生成图像 |
 
 ## 常见问题
+
+### 提示词太短，生成结果不对？
+
+点击 **「✨ 优化提示词」** 按钮，系统会自动补充英文关键词与画质描述。例如「猪」会扩展为「猪，a pig, farm animal, highly detailed...」，提升 Stable Horde 等模型的理解准确度。
 
 ### 显示「图像已生成」但预览区裂图？
 

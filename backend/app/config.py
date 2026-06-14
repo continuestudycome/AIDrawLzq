@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     stable_horde_max_wait_seconds: float = 180.0
     stable_horde_models: str = ""
 
+    # 提示词优化
+    prompt_optimizer_use_openai: bool = True
+    prompt_optimizer_fallback_rules: bool = True
+    prompt_optimizer_model: str = "gpt-4o-mini"
+    prompt_optimizer_timeout_seconds: float = 30.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

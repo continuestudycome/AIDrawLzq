@@ -178,6 +178,39 @@ textarea:focus {
   cursor: not-allowed;
 }
 
+.action-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  padding: 12px 18px;
+  border: 1px solid rgba(147, 197, 253, 0.35);
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #bfdbfe;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1;
+  min-width: 140px;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.secondary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.action-row .primary-button {
+  flex: 1;
+  min-width: 140px;
+}
+
 .error {
   margin: 0;
   color: #fca5a5;
