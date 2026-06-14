@@ -1,13 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { checkHealth, generateFromText, optimizePrompt } from './api/draw'
-import {
-  isBrowserSpeechSupported,
-  startBrowserSpeechRecognition,
-  type BrowserSpeechSession,
-} from './composables/useBrowserSpeechRecognition'
+import { computed, onMounted, ref } from 'vue'
+import { checkHealth, generateFromText, optimizePrompt, speechToText } from './api/draw'
 
-type AppStatus = 'idle' | 'recording' | 'processing' | 'done' | 'error'
+type AppStatus = 'idle' | 'recording' | 'transcribing' | 'processing' | 'done' | 'error'
 
 const status = ref<AppStatus>('idle')
 const transcript = ref('')
@@ -16,24 +11,17 @@ const imageUrl = ref<string | null>(null)
 const errorMessage = ref('')
 const backendOnline = ref(false)
 const isOptimizing = ref(false)
-const browserSpeechSupported = ref(isBrowserSpeechSupported())
-const speechMode = ref<'local' | 'cloud' | null>(null)
-const speechStatus = ref('')
 
-let activeSpeechSession: BrowserSpeechSession | null = null
-let speechResultHandled = false
-
-const speechHint = computed(() => {
-  if (!browserSpeechSupported.value) return ''
-  if (speechMode.value === 'local') return '免费语音识别（本地离线，无需外网）'
-  if (speechMode.value === 'cloud') return '免费语音识别（云端，需可访问 Google 服务）'
-  return '免费语音识别（优先本地，不可用则尝试云端）'
-})
+const mediaRecorder = ref<MediaRecorder | null>(null)
+const audioChunks = ref<Blob[]>([])
+let recordingStream: MediaStream | null = null
 
 const statusText = computed(() => {
   switch (status.value) {
     case 'recording':
-      return speechStatus.value || '正在准备语音识别…'
+      return '正在录音，请说话…'
+    case 'transcribing':
+      return '正在识别语音…'
     case 'processing':
       return '正在生成图像，免费服务可能需要 1-3 分钟…'
     case 'done':
@@ -41,79 +29,81 @@ const statusText = computed(() => {
     case 'error':
       return '出错了'
     default:
-      return browserSpeechSupported.value
-        ? '点击麦克风，使用浏览器免费语音识别'
-        : '请使用 Chrome 或 Edge 浏览器进行语音识别'
+      return '点击麦克风开始录音，说完后再点一次停止'
   }
 })
 
 const isBusy = computed(
-  () => status.value === 'recording' || status.value === 'processing' || isOptimizing.value,
+  () =>
+    status.value === 'recording' ||
+    status.value === 'transcribing' ||
+    status.value === 'processing' ||
+    isOptimizing.value,
 )
 
-function startRecording() {
-  activeSpeechSession?.abort()
+function cleanupRecordingStream() {
+  recordingStream?.getTracks().forEach((track) => track.stop())
+  recordingStream = null
+}
 
+async function startRecording() {
   errorMessage.value = ''
   resultMessage.value = ''
-  imageUrl.value = null
-  speechResultHandled = false
-  speechMode.value = null
-  speechStatus.value = '正在准备语音识别…'
 
-  if (!browserSpeechSupported.value) {
-    status.value = 'error'
-    errorMessage.value = '当前浏览器不支持免费语音识别，请使用 Chrome 或 Edge'
-    return
-  }
+  try {
+    cleanupRecordingStream()
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    recordingStream = stream
+    audioChunks.value = []
 
-  status.value = 'recording'
+    const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+    const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type))
+    mediaRecorder.value = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
 
-  activeSpeechSession = startBrowserSpeechRecognition({
-    lang: 'zh-CN',
-    onStatus: (message) => {
-      speechStatus.value = message
-    },
-    onModeChange: (mode) => {
-      speechMode.value = mode
-    },
-    onInterim: (text) => {
-      transcript.value = text
-    },
-    onResult: (text) => {
-      if (speechResultHandled) return
-      speechResultHandled = true
-      transcript.value = text
-      void handleSpeechComplete(text)
-    },
-    onError: (message) => {
-      status.value = 'error'
-      errorMessage.value = message
-    },
-    onEnd: () => {
-      speechStatus.value = ''
-      if (status.value === 'recording') {
-        status.value = speechResultHandled ? 'processing' : 'idle'
+    mediaRecorder.value.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.value.push(event.data)
       }
-    },
-  })
+    }
+
+    mediaRecorder.value.onstop = async () => {
+      cleanupRecordingStream()
+      await handleRecordingComplete()
+    }
+
+    mediaRecorder.value.start()
+    status.value = 'recording'
+  } catch {
+    status.value = 'error'
+    errorMessage.value = '无法访问麦克风，请检查浏览器权限'
+  }
 }
 
 function stopRecording() {
-  activeSpeechSession?.stop()
+  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+    mediaRecorder.value.stop()
+  }
 }
 
-async function handleSpeechComplete(text: string) {
-  status.value = 'processing'
+async function handleRecordingComplete() {
+  status.value = 'transcribing'
 
   try {
-    const drawResult = await generateFromText(text)
-    resultMessage.value = drawResult.message
-    imageUrl.value = drawResult.image_url
-    status.value = 'done'
+    const audioBlob = new Blob(audioChunks.value, {
+      type: mediaRecorder.value?.mimeType || 'audio/webm',
+    })
+
+    if (!audioBlob.size) {
+      throw new Error('录音内容为空，请重新录音')
+    }
+
+    const speechResult = await speechToText(audioBlob)
+    transcript.value = speechResult.text
+    resultMessage.value = '语音识别完成，可编辑后点击「生成图像」'
+    status.value = 'idle'
   } catch (error) {
     status.value = 'error'
-    errorMessage.value = error instanceof Error ? error.message : '处理失败'
+    errorMessage.value = error instanceof Error ? error.message : '语音识别失败'
   }
 }
 
@@ -155,12 +145,7 @@ async function generateFromInput() {
 }
 
 onMounted(async () => {
-  browserSpeechSupported.value = isBrowserSpeechSupported()
   backendOnline.value = await checkHealth().catch(() => false)
-})
-
-onUnmounted(() => {
-  activeSpeechSession?.abort()
 })
 </script>
 
@@ -182,15 +167,15 @@ onUnmounted(() => {
         <div class="voice-box">
           <button
             class="mic-button"
-            :class="{ recording: status === 'recording', busy: isBusy }"
-            :disabled="!browserSpeechSupported || (isBusy && status !== 'recording')"
+            :class="{ recording: status === 'recording', busy: isBusy && status !== 'recording' }"
+            :disabled="isBusy && status !== 'recording'"
             @click="status === 'recording' ? stopRecording() : startRecording()"
           >
             <span class="mic-icon">{{ status === 'recording' ? '■' : '🎤' }}</span>
           </button>
           <p class="status-text">{{ statusText }}</p>
-          <p v-if="status === 'recording'" class="speech-hint">说完后请再次点击麦克风 ■ 停止</p>
-          <p v-if="speechHint" class="speech-hint">{{ speechHint }}</p>
+          <p v-if="status === 'recording'" class="speech-hint">说完后再次点击 ■ 停止录音</p>
+          <p v-else class="speech-hint">本地 Whisper 免费识别（需后端运行）</p>
         </div>
 
         <label class="field">

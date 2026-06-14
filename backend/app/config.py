@@ -1,8 +1,17 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ENV_FILE = _BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "AI Voice Draw"
     debug: bool = True
@@ -10,12 +19,20 @@ class Settings(BaseSettings):
     port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # 语音识别（OpenAI Whisper API）
+    # 语音识别（local=本地 Whisper 免费 / openai=Whisper API）
+    speech_provider: str = "local"
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     speech_model: str = "whisper-1"
     speech_language: str | None = "zh"
     speech_timeout_seconds: float = 60.0
+    whisper_local_model: str = "base"
+    whisper_local_language: str = "zh"
+    whisper_local_device: str = "cpu"
+    whisper_local_compute_type: str = "int8"
+    whisper_local_model_path: str | None = None
+    huggingface_endpoint: str = "https://hf-mirror.com"
+    huggingface_hub_disable_ssl: bool = True
 
     # 图像生成（auto=有 Key 用 OpenAI，否则 Pollinations 免费服务）
     image_provider: str = "auto"
@@ -56,3 +73,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+from app.hub_environment import configure_huggingface_hub
+
+configure_huggingface_hub(settings)

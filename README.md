@@ -13,7 +13,7 @@
 | [python-multipart](https://github.com/Kludex/python-multipart) | 上传语音文件解析 |
 | [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | 环境变量与配置管理 |
 | [httpx](https://www.python-httpx.org/) | 调用 OpenAI、Stable Horde 等 HTTP 服务 |
-| [python-dotenv](https://github.com/theskumar/python-dotenv) | 加载 `.env` 配置 |
+| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | 本地 Whisper 语音识别（免费） | 步骤 6 |
 
 ### 前端（Node.js）
 
@@ -40,8 +40,8 @@
 
 | 模块 | 说明 |
 |------|------|
-| 语音录音与识别 | 前端使用浏览器 Web Speech API 免费语音识别（Chrome/Edge），无需 API Key |
-| 语音识别（可选） | 后端 `app/services/speech_recognition.py` 封装 Whisper API（需 OpenAI Key） |
+| 语音录音与识别 | 前端 MediaRecorder 录音，停止后上传后端本地 Whisper 识别为文字 |
+| 本地 Whisper 识别 | 后端 `app/services/local_speech_recognition.py`，免费离线，国内可用 |
 | 图像生成编排 | 后端 `app/services/image_generation.py` 统一调度 OpenAI / Stable Horde / Pollinations |
 | Stable Horde 免费绘图 | 后端 `app/services/stable_horde_image.py` 提交异步任务、轮询并下载图片 |
 | 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
@@ -59,7 +59,7 @@
 - [x] **步骤 4**：接入 Pollinations 免费图像生成
 - [x] **步骤 4 修复**：Pollinations 收费后改用 Stable Horde，后端转 data URL 修复裂图
 - [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
-- [x] **步骤 5**：接入浏览器免费语音识别（Web Speech API，无需 API Key）
+- [x] **步骤 6**：后端本地 Whisper 免费语音识别（录音 → 停止 → 文字填入文本框）
 
 ## 项目结构
 
@@ -116,35 +116,74 @@ npm run dev
 
 > **注意**：请确保 8000 端口只运行一个后端进程，避免旧进程返回过期响应。
 
-## 语音识别（步骤 5，免费）
+## 语音识别（步骤 6，免费推荐）
 
-**默认使用浏览器免费语音识别**，无需 API Key，也无需后端参与。
+**录音 → 停止 → 文字自动填入下方文本框**，不依赖浏览器语音识别，国内可用。
 
 | 项目 | 说明 |
 |------|------|
-| 技术 | Web Speech API（Chrome / Edge 内置） |
-| 费用 | 免费 |
-| 网络 | 优先本地离线识别；云端模式需可访问 Google 服务 |
-| 国内网络 | 若云端失败，会自动尝试 Chrome 本地语音包；仍失败请手动输入 |
-| 用法 | 点击麦克风 → 说话 → 自动识别并填入文本框 |
+| 技术 | 前端 MediaRecorder 录音 + 后端 faster-whisper 本地识别 |
+| 费用 | 免费，无需 API Key |
+| 网络 | 首次运行需下载模型（约 150MB），之后可离线识别 |
+| 用法 | 点击 🎤 开始录音 → 说话 → 再点 ■ 停止 → 文字出现在文本框 |
 
-### 可选：后端 Whisper（步骤 2）
-
-若配置了 OpenAI Key，也可通过 `POST /api/speech-to-text` 使用 Whisper，但前端默认已改用浏览器免费方案。
+### 配置
 
 ```env
-OPENAI_API_KEY=sk-your-key-here
-SPEECH_LANGUAGE=zh
+SPEECH_PROVIDER=local
+WHISPER_LOCAL_MODEL=base
 ```
-
-可选配置：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | 兼容 OpenAI 格式的代理地址 |
-| `SPEECH_MODEL` | `whisper-1` | Whisper 模型 |
-| `SPEECH_LANGUAGE` | `zh` | 语言提示 |
-| `SPEECH_TIMEOUT_SECONDS` | `60` | 请求超时（秒） |
+| `SPEECH_PROVIDER` | `local` | `local` / `openai` / `auto` |
+| `WHISPER_LOCAL_MODEL` | `base` | 模型：`tiny`（快）/ `base`（推荐）/ `small` |
+| `WHISPER_LOCAL_LANGUAGE` | `zh` | 识别语言 |
+| `WHISPER_LOCAL_DEVICE` | `cpu` | 运行设备 |
+| `WHISPER_LOCAL_COMPUTE_TYPE` | `int8` | 量化类型，CPU 推荐 int8 |
+| `HUGGINGFACE_ENDPOINT` | `https://hf-mirror.com` | Hugging Face 国内镜像 |
+| `HUGGINGFACE_HUB_DISABLE_SSL` | `true` | 解决 Windows SSL 证书问题 |
+| `WHISPER_LOCAL_MODEL_PATH` | （空） | 本地已下载模型目录，跳过在线下载 |
+
+首次识别会自动下载 Whisper 模型，可能需要几分钟。
+
+**若报 SSL 证书错误**，按顺序尝试：
+
+1. 确认 `backend/.env` 已设置镜像（并重启后端）：
+
+```env
+HUGGINGFACE_ENDPOINT=https://hf-mirror.com
+HUGGINGFACE_HUB_DISABLE_SSL=true
+```
+
+2. **推荐**：手动预下载模型（避免首次识别时在线拉取）：
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\download_whisper_model.py
+```
+
+下载完成后在 `.env` 添加（脚本会打印路径）：
+
+```env
+WHISPER_LOCAL_MODEL_PATH=D:/七牛云/backend/models/faster-whisper-base
+```
+
+### 首次使用（安装）
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+.\.venv\Scripts\python.exe scripts\download_whisper_model.py
+```
+
+### 可选：OpenAI Whisper API
+
+```env
+SPEECH_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key-here
+```
 
 ## 图像生成配置（步骤 3 / 4）
 
@@ -188,7 +227,7 @@ IMAGE_MODEL=dall-e-3
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查 |
-| POST | `/api/speech-to-text` | 可选，上传语音由 Whisper 识别（需 OpenAI Key） |
+| POST | `/api/speech-to-text` | 上传录音，本地 Whisper 或 OpenAI 识别为文本 |
 | POST | `/api/optimize-prompt` | 优化提示词，扩展为更详细的绘图描述 |
 | POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
 | POST | `/api/generate` | 根据提示词生成图像 |
@@ -213,15 +252,12 @@ IMAGE_PROVIDER=stablehorde
 
 Stable Horde 免费匿名队列可能需要 **1-3 分钟**甚至更久，属正常现象。可在 [stablehorde.net](https://stablehorde.net/register) 注册获取专属 Key 提升优先级。
 
-### 语音识别报「需要网络连接」？
+### 语音识别没反应？
 
-Chrome 云端语音识别依赖 Google 服务，国内网络常不可用。当前版本会：
-
-1. **优先尝试 Chrome 本地离线语音包**（无需外网）
-2. 本地不可用时再尝试云端
-3. 若仍失败，请**手动输入提示词**，或更新 Chrome 到最新版并在设置中下载中文语音包
-
-请使用 **Chrome 142+ 或 Edge** 浏览器，并允许麦克风权限。
+1. 确认**后端已启动**（右上角显示「后端已连接」）
+2. 点击 🎤 开始 → 说话 → **再点 ■ 停止**（必须点两次）
+3. 等待「正在识别语音…」，文字会填入下方文本框
+4. 首次使用需下载 Whisper 模型，请耐心等待
 
 ## 下一步
 

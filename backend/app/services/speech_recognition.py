@@ -1,10 +1,14 @@
-"""语音识别服务：通过 OpenAI Whisper API 将音频转为文本。"""
+"""语音识别服务：支持本地 Whisper 与 OpenAI Whisper API。"""
 
 from __future__ import annotations
 
 import httpx
 
 from app.config import settings
+from app.services.local_speech_recognition import (
+    LocalSpeechRecognitionError,
+    transcribe_local_audio,
+)
 
 
 class SpeechRecognitionError(Exception):
@@ -15,13 +19,12 @@ class SpeechRecognitionNotConfiguredError(SpeechRecognitionError):
     """未配置语音识别所需的 API Key。"""
 
 
-async def transcribe_audio(
+async def _transcribe_openai_audio(
     audio_bytes: bytes,
     *,
     filename: str = "recording.webm",
     content_type: str | None = None,
 ) -> tuple[str, float | None]:
-    """将音频字节流识别为文本，返回 (text, confidence)。"""
     if not settings.openai_api_key:
         raise SpeechRecognitionNotConfiguredError(
             "未配置 OPENAI_API_KEY，请在 backend/.env 中设置后重启服务"
@@ -62,3 +65,34 @@ async def transcribe_audio(
         raise SpeechRecognitionError("语音识别结果为空，请重新录音")
 
     return text, None
+
+
+def resolve_speech_provider() -> str:
+    provider = settings.speech_provider.lower().strip()
+    if provider in {"local", "openai"}:
+        return provider
+    if settings.openai_api_key:
+        return "openai"
+    return "local"
+
+
+async def transcribe_audio(
+    audio_bytes: bytes,
+    *,
+    filename: str = "recording.webm",
+    content_type: str | None = None,
+) -> tuple[str, float | None]:
+    """将音频识别为文本，返回 (text, confidence)。"""
+    provider = resolve_speech_provider()
+
+    if provider == "openai":
+        return await _transcribe_openai_audio(
+            audio_bytes,
+            filename=filename,
+            content_type=content_type,
+        )
+
+    try:
+        return await transcribe_local_audio(audio_bytes, filename=filename)
+    except LocalSpeechRecognitionError as exc:
+        raise SpeechRecognitionError(str(exc)) from exc
