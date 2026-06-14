@@ -71,6 +71,8 @@ def resolve_speech_provider() -> str:
     provider = settings.speech_provider.lower().strip()
     if provider in {"local", "openai"}:
         return provider
+    if provider == "auto":
+        return "openai" if settings.openai_api_key else "local"
     if settings.openai_api_key:
         return "openai"
     return "local"

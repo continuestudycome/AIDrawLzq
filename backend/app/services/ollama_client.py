@@ -15,8 +15,9 @@ OLLAMA_SYSTEM_PROMPT = (
     "你是 AI 绘图提示词专家。根据用户输入，生成适合 Stable Diffusion 的中英文绘图提示词。\n"
     "只输出 JSON，包含 display_cn 和 prompt_en 两个字段，不要输出其它文字。\n"
     "display_cn：完整的中文画面描述，给用户阅读。\n"
-    "prompt_en：纯英文绘图提示词，用于 AI 生图，不含中文。\n"
-    "要求：保留用户原意，补充主体、场景、风格、光影与画质细节；写成自然语句，不要重复堆砌原文。"
+    "prompt_en：纯英文绘图提示词，用于 Stable Diffusion；用逗号分隔关键词；"
+    "必须把主体（如 pig, cat）放在最前面，再写场景、风格、光影与画质词（如 photorealistic, highly detailed）；不含中文。\n"
+    "要求：保留用户原意，细节具体，不要重复堆砌原文。"
 )
 
 OLLAMA_FEW_SHOT_USER = "一只猪"

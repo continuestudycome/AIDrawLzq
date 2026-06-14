@@ -31,6 +31,7 @@ class DrawResponse(BaseModel):
     image_url: str | None = None
     message: str = "ok"
     history_id: str | None = None
+    history_saved: bool = False
 
 
 class OptimizePromptRequest(BaseModel):

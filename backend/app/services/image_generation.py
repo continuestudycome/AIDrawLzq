@@ -169,14 +169,3 @@ async def generate_image(
         return image_url, "图像已生成（OpenAI DALL·E）"
 
     return await _generate_free_image_data_url(prompt, width=width, height=height)
-
-
-async def generate_image_url(
-    prompt: str,
-    *,
-    width: int = 512,
-    height: int = 512,
-) -> str:
-    """兼容旧调用方式，仅返回图片 URL。"""
-    image_url, _ = await generate_image(prompt, width=width, height=height)
-    return image_url

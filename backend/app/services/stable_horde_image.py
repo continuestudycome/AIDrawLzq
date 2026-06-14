@@ -35,6 +35,7 @@ async def generate_stable_horde_data_url(
             "width": max(64, min(width, 1024)),
             "height": max(64, min(height, 1024)),
             "steps": settings.stable_horde_steps,
+            "negative_prompt": settings.stable_horde_negative_prompt,
         },
         "nsfw": False,
         "censor_nsfw": True,

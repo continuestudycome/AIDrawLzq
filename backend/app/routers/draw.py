@@ -1,6 +1,5 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.config import settings
 from app.schemas.draw import (
     DrawRequest,
     DrawResponse,
@@ -9,11 +8,10 @@ from app.schemas.draw import (
     SpeechToTextResponse,
     TranscriptRequest,
 )
-from app.services.history_store import HistoryStoreError, add_history_entry
+from app.services.draw_pipeline import build_draw_response
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationNotConfiguredError,
-    generate_image as create_image_from_prompt,
 )
 from app.services.prompt_optimizer import PromptOptimizerError, optimize_prompt
 from app.services.speech_recognition import (
@@ -23,46 +21,6 @@ from app.services.speech_recognition import (
 )
 
 router = APIRouter(prefix="/api", tags=["draw"])
-
-
-async def _build_draw_response(
-    prompt: str,
-    *,
-    display_prompt: str | None = None,
-    width: int = 512,
-    height: int = 512,
-) -> DrawResponse:
-    try:
-        image_url, message = await create_image_from_prompt(prompt, width=width, height=height)
-    except ImageGenerationNotConfiguredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ImageGenerationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    history_id: str | None = None
-    response_image_url = image_url
-
-    if settings.history_enabled and image_url:
-        try:
-            history_item = await add_history_entry(
-                display_prompt=display_prompt or prompt,
-                generation_prompt=prompt,
-                image_url=image_url,
-                message=message,
-                width=width,
-                height=height,
-            )
-            history_id = history_item.id
-            response_image_url = history_item.image_url
-        except HistoryStoreError:
-            pass
-
-    return DrawResponse(
-        prompt=prompt,
-        image_url=response_image_url,
-        message=message,
-        history_id=history_id,
-    )
 
 
 @router.post("/optimize-prompt", response_model=OptimizePromptResponse)
@@ -84,7 +42,7 @@ async def optimize_prompt_endpoint(payload: OptimizePromptRequest) -> OptimizePr
 
 @router.post("/speech-to-text", response_model=SpeechToTextResponse)
 async def speech_to_text(audio: UploadFile = File(...)) -> SpeechToTextResponse:
-    """接收语音文件，通过 Whisper API 返回识别文本。"""
+    """接收语音文件，通过 Whisper 返回识别文本。"""
     audio_bytes = await audio.read()
 
     try:
@@ -101,21 +59,31 @@ async def speech_to_text(audio: UploadFile = File(...)) -> SpeechToTextResponse:
     return SpeechToTextResponse(text=text, confidence=confidence)
 
 
-@router.post("/transcript", response_model=DrawResponse)
-async def draw_from_transcript(payload: TranscriptRequest) -> DrawResponse:
-    """根据文本生成图像。"""
-    return await _build_draw_response(
-        payload.text,
-        display_prompt=payload.display_prompt,
-    )
-
-
 @router.post("/generate", response_model=DrawResponse)
 async def generate_image(payload: DrawRequest) -> DrawResponse:
-    """根据提示词生成图像。"""
-    return await _build_draw_response(
-        payload.prompt,
-        display_prompt=payload.display_prompt,
-        width=payload.width,
-        height=payload.height,
-    )
+    """根据提示词生成图像（主接口）。"""
+    try:
+        return await build_draw_response(
+            payload.prompt,
+            display_prompt=payload.display_prompt,
+            width=payload.width,
+            height=payload.height,
+        )
+    except ImageGenerationNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImageGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/transcript", response_model=DrawResponse, deprecated=True)
+async def draw_from_transcript(payload: TranscriptRequest) -> DrawResponse:
+    """兼容旧前端：等价于 POST /api/generate。"""
+    try:
+        return await build_draw_response(
+            payload.text,
+            display_prompt=payload.display_prompt,
+        )
+    except ImageGenerationNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImageGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

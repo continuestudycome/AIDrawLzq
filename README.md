@@ -221,7 +221,8 @@ IMAGE_MODEL=dall-e-3
 | `IMAGE_QUALITY` | `standard` | DALL·E 3 画质 |
 | `STABLE_HORDE_API_KEY` | `0000000000` | 匿名 Key；注册后可换专属 Key 提升优先级 |
 | `STABLE_HORDE_MAX_WAIT_SECONDS` | `180` | 免费队列最长等待（秒） |
-| `STABLE_HORDE_STEPS` | `20` | 生成步数 |
+| `STABLE_HORDE_STEPS` | `28` | 生成步数，略高更清晰 |
+| `STABLE_HORDE_MODELS` | `Deliberate` | 指定模型，避免随机分配到差模型 |
 | `POLLINATIONS_BASE_URL` | `https://image.pollinations.ai` | Pollinations 地址（已收费） |
 | `IMAGE_TIMEOUT_SECONDS` | `120` | HTTP 请求超时（秒） |
 
@@ -284,11 +285,11 @@ OLLAMA_MODEL=qwen2.5:7b
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/health` | 健康检查 |
+| GET | `/health` | 健康检查（含 speech/image/prompt 提供方与 Ollama 可达性） |
 | POST | `/api/speech-to-text` | 上传录音，本地 Whisper 或 OpenAI 识别为文本 |
 | POST | `/api/optimize-prompt` | 优化提示词，返回 `optimized`（中文展示）与 `optimized_en`（英文绘图） |
-| POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
-| POST | `/api/generate` | 根据提示词生成图像 |
+| POST | `/api/generate` | **主接口**：根据提示词生成图像（响应含 `history_saved`） |
+| POST | `/api/transcript` | 已弃用，等价于 `/api/generate`（兼容旧客户端） |
 | GET | `/api/history` | 获取生成历史列表 |
 | GET | `/api/history/{id}/image` | 获取历史记录中的图片 |
 | DELETE | `/api/history/{id}` | 删除一条历史记录 |
@@ -297,7 +298,22 @@ OLLAMA_MODEL=qwen2.5:7b
 
 ### 提示词太短，生成结果不对？
 
-点击 **「✨ 优化提示词」**，系统会调用 Ollama 本地大模型将简短描述扩展为详细的中英文绘图提示词，提升 Stable Horde 等模型的理解准确度。需先安装并启动 Ollama。
+1. **先点「优化提示词」**，再点「生成图像」——免费 Stable Horde 主要理解**英文关键词**，不要直接用中文生图
+2. 展开「查看英文绘图提示词」，确认主体词（如 `pig`、`cat`）在英文里且靠前
+3. 默认已指定 `Deliberate` 模型并加入负面提示词，重启后端后生效
+
+### 生成图片和描述差很多？
+
+常见原因：
+
+| 原因 | 处理 |
+|------|------|
+| 未优化，直接用中文生图 | 先「优化提示词」，用英文版生图 |
+| 免费队列随机模型（旧配置） | `.env` 设置 `STABLE_HORDE_MODELS=Deliberate` |
+| 提示词太抽象 | 优化后补充具体场景、风格、光线 |
+| 免费模型能力有限 | 注册 [Stable Horde](https://stablehorde.net/register) 换专属 Key，或配置 OpenAI DALL·E |
+
+免费服务本身有随机性，同一提示词多次生成结果也可能不同，可多试几次。
 
 ### Ollama 优化失败？
 

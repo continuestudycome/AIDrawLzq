@@ -3,6 +3,7 @@ export interface DrawResponse {
   image_url: string | null
   message: string
   history_id?: string | null
+  history_saved?: boolean
 }
 
 export interface SpeechToTextResponse {
@@ -76,11 +77,11 @@ export async function generateFromText(
   text: string,
   options?: { displayPrompt?: string },
 ): Promise<DrawResponse> {
-  const response = await fetch('/api/transcript', {
+  const response = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      text,
+      prompt: text,
       display_prompt: options?.displayPrompt,
     }),
   })

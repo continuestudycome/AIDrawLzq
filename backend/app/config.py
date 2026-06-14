@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     huggingface_endpoint: str = "https://hf-mirror.com"
     huggingface_hub_disable_ssl: bool = True
 
-    # 图像生成（auto=有 Key 用 OpenAI，否则 Pollinations 免费服务）
-    image_provider: str = "auto"
+    # 图像生成（stablehorde=Stable Horde 免费 / openai=OpenAI / auto=有 Key 用 OpenAI 否则 Stable Horde）
+    image_provider: str = "stablehorde"
     image_api_key: str | None = None
     image_model: str = "dall-e-3"
     image_quality: str = "standard"
@@ -46,15 +46,18 @@ class Settings(BaseSettings):
     # Stable Horde 免费图像生成（无需注册，匿名 Key）
     stable_horde_api_key: str = "0000000000"
     stable_horde_base_url: str = "https://stablehorde.net/api/v2"
-    stable_horde_steps: int = 20
+    stable_horde_steps: int = 28
     stable_horde_poll_interval: float = 3.0
     stable_horde_max_wait_seconds: float = 180.0
-    stable_horde_models: str = ""
+    stable_horde_models: str = "Deliberate"
+    stable_horde_negative_prompt: str = (
+        "low quality, blurry, distorted, deformed, ugly, bad anatomy, bad hands, "
+        "extra limbs, text, watermark, logo, signature, cropped, worst quality"
+    )
 
     # 提示词优化（ollama=本地 Ollama / openai=OpenAI / rules=规则）
     prompt_optimizer_provider: str = "ollama"
     prompt_optimizer_fallback_rules: bool = True
-    prompt_optimizer_use_openai: bool = False
     prompt_optimizer_model: str = "gpt-4o-mini"
     prompt_optimizer_timeout_seconds: float = 30.0
     ollama_base_url: str = "http://127.0.0.1:11434"

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import HistorySidebar from './components/HistorySidebar.vue'
 import {
   checkHealth,
-  deleteHistoryItem,
-  fetchHistory,
   generateFromText,
   optimizePrompt,
   speechToText,
   type HistoryItem,
 } from './api/draw'
+import { formatHistoryTime, useHistory } from './composables/useHistory'
+import { useVoiceRecording } from './composables/useVoiceRecording'
 
 type AppStatus = 'idle' | 'recording' | 'transcribing' | 'processing' | 'done' | 'error'
 
@@ -22,16 +23,45 @@ const errorMessage = ref('')
 const backendOnline = ref(false)
 const isOptimizing = ref(false)
 const skipTranscriptWatch = ref(false)
-const historyItems = ref<HistoryItem[]>([])
-const historyLoading = ref(false)
-const activeHistoryId = ref<string | null>(null)
-const historySidebarOpen = ref(false)
-const deleteConfirmItem = ref<HistoryItem | null>(null)
-const deleteLoading = ref(false)
 
-const mediaRecorder = ref<MediaRecorder | null>(null)
-const audioChunks = ref<Blob[]>([])
-let recordingStream: MediaStream | null = null
+const {
+  historyItems,
+  historyLoading,
+  activeHistoryId,
+  historySidebarOpen,
+  deleteConfirmItem,
+  deleteLoading,
+  loadHistory,
+  openHistorySidebar,
+  closeHistorySidebar,
+  toggleHistorySidebar,
+  requestRemoveHistoryItem,
+  cancelDeleteHistory,
+  confirmDeleteHistory,
+} = useHistory(backendOnline)
+
+const { isRecording, startRecording, stopRecording } = useVoiceRecording(async (audioBlob) => {
+  status.value = 'transcribing'
+  try {
+    const speechResult = await speechToText(audioBlob)
+    skipTranscriptWatch.value = true
+    transcript.value = speechResult.text
+    generationPrompt.value = null
+    skipTranscriptWatch.value = false
+    activeHistoryId.value = null
+    resultMessage.value = '语音识别完成，可编辑后点击「生成图像」'
+    status.value = 'idle'
+  } catch (error) {
+    status.value = 'error'
+    errorMessage.value = error instanceof Error ? error.message : '语音识别失败'
+  }
+})
+
+watch(isRecording, (recording) => {
+  if (recording) {
+    status.value = 'recording'
+  }
+})
 
 const statusText = computed(() => {
   switch (status.value) {
@@ -58,121 +88,32 @@ const isBusy = computed(
     isOptimizing.value,
 )
 
+const suggestOptimizeBeforeGenerate = computed(
+  () =>
+    transcript.value.trim() &&
+    !generationPrompt.value?.trim() &&
+    /[\u4e00-\u9fff]/.test(transcript.value),
+)
+
 watch(transcript, () => {
   if (skipTranscriptWatch.value) return
   generationPrompt.value = null
 })
 
-function formatHistoryTime(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function cleanupRecordingStream() {
-  recordingStream?.getTracks().forEach((track) => track.stop())
-  recordingStream = null
-}
-
-async function loadHistory() {
-  if (!backendOnline.value) return
-
-  historyLoading.value = true
-  try {
-    const result = await fetchHistory()
-    historyItems.value = result.items
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '获取历史记录失败'
-  } finally {
-    historyLoading.value = false
-  }
-}
-
-function openHistorySidebar() {
-  historySidebarOpen.value = true
-  if (backendOnline.value) {
-    void loadHistory()
-  }
-}
-
-function closeHistorySidebar() {
-  historySidebarOpen.value = false
-}
-
-function toggleHistorySidebar() {
-  if (historySidebarOpen.value) {
-    closeHistorySidebar()
-    return
-  }
-  openHistorySidebar()
-}
-
-async function startRecording() {
+async function handleMicClick() {
   errorMessage.value = ''
   resultMessage.value = ''
 
+  if (status.value === 'recording') {
+    stopRecording()
+    return
+  }
+
   try {
-    cleanupRecordingStream()
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    recordingStream = stream
-    audioChunks.value = []
-
-    const preferredTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-    const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type))
-    mediaRecorder.value = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-
-    mediaRecorder.value.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.value.push(event.data)
-      }
-    }
-
-    mediaRecorder.value.onstop = async () => {
-      cleanupRecordingStream()
-      await handleRecordingComplete()
-    }
-
-    mediaRecorder.value.start()
-    status.value = 'recording'
+    await startRecording()
   } catch {
     status.value = 'error'
     errorMessage.value = '无法访问麦克风，请检查浏览器权限'
-  }
-}
-
-function stopRecording() {
-  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
-    mediaRecorder.value.stop()
-  }
-}
-
-async function handleRecordingComplete() {
-  status.value = 'transcribing'
-
-  try {
-    const audioBlob = new Blob(audioChunks.value, {
-      type: mediaRecorder.value?.mimeType || 'audio/webm',
-    })
-
-    if (!audioBlob.size) {
-      throw new Error('录音内容为空，请重新录音')
-    }
-
-    const speechResult = await speechToText(audioBlob)
-    skipTranscriptWatch.value = true
-    transcript.value = speechResult.text
-    generationPrompt.value = null
-    skipTranscriptWatch.value = false
-    activeHistoryId.value = null
-    resultMessage.value = '语音识别完成，可编辑后点击「生成图像」'
-    status.value = 'idle'
-  } catch (error) {
-    status.value = 'error'
-    errorMessage.value = error instanceof Error ? error.message : '语音识别失败'
   }
 }
 
@@ -212,6 +153,9 @@ async function generateFromInput() {
   try {
     const drawResult = await generateFromText(prompt, { displayPrompt })
     resultMessage.value = drawResult.message
+    if (drawResult.history_saved === false) {
+      resultMessage.value = `${drawResult.message}（历史记录未保存）`
+    }
     imageUrl.value = drawResult.image_url
     activeHistoryId.value = drawResult.history_id ?? null
     status.value = 'done'
@@ -239,105 +183,39 @@ function applyHistoryItem(item: HistoryItem) {
   }
 }
 
-function requestRemoveHistoryItem(item: HistoryItem) {
-  deleteConfirmItem.value = item
-}
-
-function cancelDeleteHistory() {
-  if (deleteLoading.value) return
-  deleteConfirmItem.value = null
-}
-
-async function confirmDeleteHistory() {
-  const item = deleteConfirmItem.value
-  if (!item || deleteLoading.value) return
-
-  deleteLoading.value = true
+async function handleDeleteHistory() {
   try {
-    await deleteHistoryItem(item.id)
-    historyItems.value = historyItems.value.filter((entry) => entry.id !== item.id)
-    if (activeHistoryId.value === item.id) {
-      activeHistoryId.value = null
-    }
-    deleteConfirmItem.value = null
+    await confirmDeleteHistory()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '删除历史记录失败'
-  } finally {
-    deleteLoading.value = false
   }
 }
 
 onMounted(async () => {
   backendOnline.value = await checkHealth().catch(() => false)
   if (backendOnline.value) {
-    await loadHistory()
+    try {
+      await loadHistory()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : '获取历史记录失败'
+    }
   }
 })
 </script>
 
 <template>
   <div class="app-shell">
-    <div
-      v-if="historySidebarOpen"
-      class="history-backdrop"
-      aria-hidden="true"
-      @click="closeHistorySidebar"
+    <HistorySidebar
+      :open="historySidebarOpen"
+      :backend-online="backendOnline"
+      :history-loading="historyLoading"
+      :history-items="historyItems"
+      :active-history-id="activeHistoryId"
+      @close="closeHistorySidebar"
+      @refresh="loadHistory"
+      @select="applyHistoryItem"
+      @delete="requestRemoveHistoryItem"
     />
-
-    <aside class="history-sidebar" :class="{ open: historySidebarOpen }" aria-label="生成历史">
-      <div class="history-sidebar-header">
-        <div>
-          <h2>生成历史</h2>
-          <p class="history-subtitle">点击记录可重新查看</p>
-        </div>
-        <button class="history-close" type="button" aria-label="关闭历史侧边栏" @click="closeHistorySidebar">
-          ✕
-        </button>
-      </div>
-
-      <button
-        class="secondary-button history-refresh"
-        :disabled="historyLoading"
-        type="button"
-        @click="loadHistory"
-      >
-        {{ historyLoading ? '加载中…' : '刷新列表' }}
-      </button>
-
-      <div class="history-sidebar-body">
-        <div v-if="!backendOnline" class="history-empty">后端未连接，无法加载历史</div>
-        <div v-else-if="historyLoading && historyItems.length === 0" class="history-empty">正在加载历史…</div>
-        <div v-else-if="historyItems.length === 0" class="history-empty">暂无生成记录</div>
-
-        <div v-else class="history-list">
-          <article
-            v-for="item in historyItems"
-            :key="item.id"
-            class="history-card"
-            :class="{ active: activeHistoryId === item.id }"
-          >
-            <button class="history-card-main" type="button" @click="applyHistoryItem(item)">
-              <img :src="item.image_url" :alt="item.display_prompt" class="history-thumb" />
-              <div class="history-meta">
-                <time class="history-time">{{ formatHistoryTime(item.created_at) }}</time>
-                <p class="history-prompt">{{ item.display_prompt }}</p>
-                <p v-if="item.generation_prompt !== item.display_prompt" class="history-en">
-                  英文：{{ item.generation_prompt }}
-                </p>
-              </div>
-            </button>
-            <button
-              class="history-delete"
-              type="button"
-              title="删除这条记录"
-              @click.stop="requestRemoveHistoryItem(item)"
-            >
-              删除
-            </button>
-          </article>
-        </div>
-      </div>
-    </aside>
 
     <button
       class="history-toggle"
@@ -368,63 +246,67 @@ onMounted(async () => {
       </header>
 
       <main class="layout">
-      <section class="panel control-panel">
-        <div class="voice-box">
-          <button
-            class="mic-button"
-            :class="{ recording: status === 'recording', busy: isBusy && status !== 'recording' }"
-            :disabled="isBusy && status !== 'recording'"
-            @click="status === 'recording' ? stopRecording() : startRecording()"
-          >
-            <span class="mic-icon">{{ status === 'recording' ? '■' : '🎤' }}</span>
-          </button>
-          <p class="status-text">{{ statusText }}</p>
-          <p v-if="status === 'recording'" class="speech-hint">说完后再次点击 ■ 停止录音</p>
-          <p v-else class="speech-hint">本地 Whisper 免费识别（需后端运行）</p>
-        </div>
-
-        <label class="field">
-          <span>识别文本 / 提示词（中文说明）</span>
-          <textarea
-            v-model="transcript"
-            rows="5"
-            placeholder="例如：一只在星空下奔跑的猫，赛博朋克风格"
-          />
-        </label>
-
-        <details v-if="generationPrompt" class="en-prompt-details">
-          <summary>查看英文绘图提示词（生成图像时自动使用）</summary>
-          <p class="en-prompt-text">{{ generationPrompt }}</p>
-        </details>
-
-        <div class="action-row">
-          <button
-            class="secondary-button"
-            :disabled="isBusy || !transcript.trim()"
-            @click="optimizePromptInput"
-          >
-            {{ isOptimizing ? '优化中…' : '✨ 优化提示词' }}
-          </button>
-          <button class="primary-button" :disabled="isBusy || !transcript.trim()" @click="generateFromInput">
-            生成图像
-          </button>
-        </div>
-
-        <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-        <p v-if="resultMessage" class="hint">{{ resultMessage }}</p>
-      </section>
-
-      <section class="panel preview-panel">
-        <h2>预览</h2>
-        <div class="canvas">
-          <img v-if="imageUrl" :src="imageUrl" alt="生成结果" />
-          <div v-else class="placeholder">
-            <p>生成结果将显示在这里</p>
-            <p v-if="transcript" class="prompt-preview">当前提示词：{{ transcript }}</p>
+        <section class="panel control-panel">
+          <div class="voice-box">
+            <button
+              class="mic-button"
+              :class="{ recording: status === 'recording', busy: isBusy && status !== 'recording' }"
+              :disabled="isBusy && status !== 'recording'"
+              @click="handleMicClick"
+            >
+              <span class="mic-icon">{{ status === 'recording' ? '■' : '🎤' }}</span>
+            </button>
+            <p class="status-text">{{ statusText }}</p>
+            <p v-if="status === 'recording'" class="speech-hint">说完后再次点击 ■ 停止录音</p>
+            <p v-else class="speech-hint">本地 Whisper 免费识别（需后端运行）</p>
           </div>
-        </div>
-      </section>
-    </main>
+
+          <label class="field">
+            <span>识别文本 / 提示词（中文说明）</span>
+            <textarea
+              v-model="transcript"
+              rows="5"
+              placeholder="例如：一只在星空下奔跑的猫，赛博朋克风格"
+            />
+          </label>
+
+          <details v-if="generationPrompt" class="en-prompt-details">
+            <summary>查看英文绘图提示词（生成图像时自动使用）</summary>
+            <p class="en-prompt-text">{{ generationPrompt }}</p>
+          </details>
+
+          <p v-if="suggestOptimizeBeforeGenerate" class="speech-hint">
+            建议先点「优化提示词」生成英文版再绘图，免费模型对英文关键词理解更好
+          </p>
+
+          <div class="action-row">
+            <button
+              class="secondary-button"
+              :disabled="isBusy || !transcript.trim()"
+              @click="optimizePromptInput"
+            >
+              {{ isOptimizing ? '优化中…' : '✨ 优化提示词' }}
+            </button>
+            <button class="primary-button" :disabled="isBusy || !transcript.trim()" @click="generateFromInput">
+              生成图像
+            </button>
+          </div>
+
+          <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+          <p v-if="resultMessage" class="hint">{{ resultMessage }}</p>
+        </section>
+
+        <section class="panel preview-panel">
+          <h2>预览</h2>
+          <div class="canvas">
+            <img v-if="imageUrl" :src="imageUrl" alt="生成结果" />
+            <div v-else class="placeholder">
+              <p>生成结果将显示在这里</p>
+              <p v-if="transcript" class="prompt-preview">当前提示词：{{ transcript }}</p>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
 
     <ConfirmDialog
@@ -435,7 +317,7 @@ onMounted(async () => {
       :image-url="deleteConfirmItem?.image_url ?? ''"
       :time="deleteConfirmItem ? formatHistoryTime(deleteConfirmItem.created_at) : ''"
       :loading="deleteLoading"
-      @confirm="confirmDeleteHistory"
+      @confirm="handleDeleteHistory"
       @cancel="cancelDeleteHistory"
     />
   </div>
