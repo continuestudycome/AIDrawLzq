@@ -1,9 +1,27 @@
+import os
 from pathlib import Path
 
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _ENV_FILE = _BACKEND_DIR / ".env"
+
+
+def read_dotenv_value(key: str) -> str | None:
+    """从 backend/.env 读取指定键（不经过 pydantic，用于检测环境变量覆盖）。"""
+    if not _ENV_FILE.exists():
+        return None
+
+    for raw_line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        env_key, _, value = line.partition("=")
+        if env_key.strip() == key:
+            cleaned = value.strip().strip('"').strip("'")
+            return cleaned or None
+    return None
 
 
 class Settings(BaseSettings):
@@ -98,6 +116,7 @@ class Settings(BaseSettings):
     history_enabled: bool = True
     history_dir: str | None = None
     history_max_items: int = 100
+    dashscope_key_conflict_resolved: bool = False
 
     @property
     def backend_dir(self) -> Path:
@@ -116,6 +135,42 @@ class Settings(BaseSettings):
         if not self.stable_horde_models.strip():
             return []
         return [model.strip() for model in self.stable_horde_models.split(",") if model.strip()]
+
+    @property
+    def dashscope_key_from_dotenv(self) -> str | None:
+        return read_dotenv_value("DASHSCOPE_API_KEY")
+
+    @property
+    def dashscope_key_env_override(self) -> bool:
+        """系统/用户环境变量中的 Key 是否与 .env 不一致（pydantic 优先使用环境变量）。"""
+        dotenv_key = self.dashscope_key_from_dotenv
+        if not dotenv_key:
+            return False
+        process_key = os.environ.get("DASHSCOPE_API_KEY")
+        if not process_key:
+            return False
+        return process_key.strip() != dotenv_key.strip()
+
+    @field_validator("dashscope_api_key", mode="before")
+    @classmethod
+    def strip_dashscope_api_key(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned or None
+        return value
+
+    @model_validator(mode="after")
+    def prefer_dotenv_dashscope_key(self) -> "Settings":
+        """backend/.env 与系统环境变量冲突时，优先使用 .env（本地开发常见误配）。"""
+        dotenv_key = read_dotenv_value("DASHSCOPE_API_KEY")
+        if not dotenv_key:
+            return self
+
+        process_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+        if process_key and process_key != dotenv_key.strip():
+            self.dashscope_key_conflict_resolved = True
+            self.dashscope_api_key = dotenv_key.strip()
+        return self
 
 
 settings = Settings()

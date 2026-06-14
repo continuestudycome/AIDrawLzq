@@ -31,7 +31,7 @@ async def _check_ollama_available() -> bool | None:
 
 
 @router.get("/health")
-async def health_check() -> dict[str, str | bool | None]:
+async def health_check() -> dict[str, str | bool | int | None]:
     try:
         image_provider = resolve_image_provider()
     except ImageGenerationNotConfiguredError:
@@ -42,6 +42,9 @@ async def health_check() -> dict[str, str | bool | None]:
     except SpeechRecognitionNotConfiguredError:
         speech_provider = "misconfigured"
 
+    loaded_key = settings.dashscope_api_key or ""
+    dotenv_key = settings.dashscope_key_from_dotenv or ""
+
     return {
         "status": "ok",
         "speech_provider": speech_provider,
@@ -49,5 +52,9 @@ async def health_check() -> dict[str, str | bool | None]:
         "prompt_optimizer": settings.prompt_optimizer_provider,
         "history_enabled": settings.history_enabled,
         "dashscope_configured": bool(settings.dashscope_api_key),
+        "dashscope_key_length": len(loaded_key),
+        "dashscope_dotenv_key_length": len(dotenv_key),
+        "dashscope_env_override": settings.dashscope_key_env_override,
+        "dashscope_key_conflict_resolved": settings.dashscope_key_conflict_resolved,
         "ollama_available": await _check_ollama_available(),
     }
