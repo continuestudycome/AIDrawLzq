@@ -32,7 +32,7 @@
 | [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) | 语音转文字 | 步骤 2 | 是 |
 | [OpenAI Images API (DALL·E)](https://platform.openai.com/docs/api-reference/images) | 文本生成图像 | 步骤 3 | 是 |
 | [Pollinations.ai](https://pollinations.ai/) | 文本生成图像（已收费 402，不推荐） | 步骤 4 | 否（已不可用） |
-| [Stable Horde](https://stablehorde.net/) | 免费文本生成图像（社区算力） | 步骤 4 修复 | 否（匿名 Key） |
+| [Ollama](https://ollama.com/) | 本地大模型提示词优化 | 步骤 7 | 否（本地运行） |
 
 ## 原创功能
 
@@ -47,7 +47,7 @@
 | 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
 | Pollinations URL 构建 | 后端 `app/services/pollinations_image.py` 构建 Pollinations 图片地址（服务已收费时自动跳过） |
 | 占位图像生成 | 后端 `app/services/placeholder_image.py` 在免费服务超时/不可用时返回 SVG 占位图 |
-| 提示词优化 | 后端生成**中文展示版**（输入框）与**英文绘图版**（实际生图）；有 OpenAI Key 时可用 AI 优化 |
+| 提示词优化 | 默认调用 **Ollama** 本地大模型，生成中文展示版与英文绘图版；失败时可回退规则优化 |
 | 生成历史 | 后端 `app/services/history_store.py` 保存时间、中英文提示词与图片到 `backend/data/history/` |
 | API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成、历史记录请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
@@ -62,6 +62,7 @@
 - [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
 - [x] **步骤 6**：后端本地 Whisper 免费语音识别（录音 → 停止 → 文字填入文本框）
 - [x] **生成历史**：自动保存生成时间、提示词与图片，支持查看与删除
+- [x] **Ollama 提示词优化**：调用本地大模型扩展用户输入为中英文绘图提示词
 
 ## 项目结构
 
@@ -224,6 +225,45 @@ IMAGE_MODEL=dall-e-3
 | `POLLINATIONS_BASE_URL` | `https://image.pollinations.ai` | Pollinations 地址（已收费） |
 | `IMAGE_TIMEOUT_SECONDS` | `120` | HTTP 请求超时（秒） |
 
+## 提示词优化配置（Ollama）
+
+默认使用本地 **Ollama** 将用户输入的实体词/短描述扩展为中英文绘图提示词。
+
+### 安装与启动 Ollama
+
+1. 安装 [Ollama](https://ollama.com/)
+2. 拉取模型（推荐中文能力较好的模型）：
+
+```powershell
+ollama pull qwen2.5:7b
+```
+
+3. 确认服务运行（安装后通常自动启动）：
+
+```powershell
+ollama serve
+```
+
+### 配置
+
+```env
+PROMPT_OPTIMIZER_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PROMPT_OPTIMIZER_PROVIDER` | `ollama` | `ollama` / `openai` / `rules` |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama API 地址 |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | 使用的本地模型 |
+| `OLLAMA_TIMEOUT_SECONDS` | `120` | 请求超时（秒） |
+| `PROMPT_OPTIMIZER_FALLBACK_RULES` | `true` | Ollama 失败时回退规则优化 |
+
+### 用法
+
+输入简短描述（如「猪」「赛博朋克风格的猫」）→ 点击 **「✨ 优化提示词」** → 输入框显示中文说明，英文版用于生成图像。
+
 ## API 概览
 
 | 方法 | 路径 | 说明 |
@@ -241,7 +281,13 @@ IMAGE_MODEL=dall-e-3
 
 ### 提示词太短，生成结果不对？
 
-点击 **「✨ 优化提示词」** 按钮，系统会自动补充英文关键词与画质描述。例如「猪」会扩展为「猪，a pig, farm animal, highly detailed...」，提升 Stable Horde 等模型的理解准确度。
+点击 **「✨ 优化提示词」**，系统会调用 Ollama 本地大模型将简短描述扩展为详细的中英文绘图提示词，提升 Stable Horde 等模型的理解准确度。需先安装并启动 Ollama。
+
+### Ollama 优化失败？
+
+1. 确认 Ollama 已运行：`ollama serve`
+2. 确认模型已下载：`ollama pull qwen2.5:7b`
+3. 检查 `backend/.env` 中 `OLLAMA_MODEL` 与已拉取的模型名一致
 
 ### 显示「图像已生成」但预览区裂图？
 

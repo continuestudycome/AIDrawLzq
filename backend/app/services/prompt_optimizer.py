@@ -231,7 +231,7 @@ def optimize_prompt_with_rules(prompt: str) -> tuple[str, str, str]:
     return optimized_cn, optimized_en, message
 
 
-def _parse_openai_dual_prompt(content: str) -> tuple[str, str]:
+def _parse_dual_prompt_json(content: str) -> tuple[str, str]:
     text = content.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -239,8 +239,17 @@ def _parse_openai_dual_prompt(content: str) -> tuple[str, str]:
 
     try:
         data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise PromptOptimizerError("AI 返回格式无效，无法解析中英文提示词") from exc
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise PromptOptimizerError("AI 返回格式无效，无法解析中英文提示词") from None
+        try:
+            data = json.loads(match.group())
+        except json.JSONDecodeError as exc:
+            raise PromptOptimizerError("AI 返回格式无效，无法解析中英文提示词") from exc
+
+    if not isinstance(data, dict):
+        raise PromptOptimizerError("AI 返回格式无效，无法解析中英文提示词")
 
     display_cn = str(data.get("display_cn", "")).strip()
     prompt_en = str(data.get("prompt_en", "")).strip()
@@ -249,6 +258,17 @@ def _parse_openai_dual_prompt(content: str) -> tuple[str, str]:
         raise PromptOptimizerError("AI 未返回完整的中英文提示词")
 
     return display_cn, prompt_en
+
+
+async def _optimize_with_ollama(prompt: str) -> tuple[str, str]:
+    from app.services.ollama_client import OllamaError, optimize_prompt_with_ollama
+
+    try:
+        content = await optimize_prompt_with_ollama(prompt)
+    except OllamaError as exc:
+        raise PromptOptimizerError(str(exc)) from exc
+
+    return _parse_dual_prompt_json(content)
 
 
 async def _optimize_with_openai(prompt: str) -> tuple[str, str]:
@@ -294,7 +314,7 @@ async def _optimize_with_openai(prompt: str) -> tuple[str, str]:
     if not content:
         raise PromptOptimizerError("提示词优化结果为空")
 
-    return _parse_openai_dual_prompt(content)
+    return _parse_dual_prompt_json(content)
 
 
 async def optimize_prompt(prompt: str) -> tuple[str, str, str, str]:
@@ -303,13 +323,34 @@ async def optimize_prompt(prompt: str) -> tuple[str, str, str, str]:
     if not original:
         raise PromptOptimizerError("提示词不能为空")
 
-    if settings.openai_api_key and settings.prompt_optimizer_use_openai:
+    provider = settings.prompt_optimizer_provider.lower().strip()
+
+    if provider == "rules":
+        optimized_cn, optimized_en, message = optimize_prompt_with_rules(original)
+        return optimized_cn, optimized_en, message, "rules"
+
+    if provider in {"ollama", "auto"}:
+        try:
+            optimized_cn, optimized_en = await _optimize_with_ollama(original)
+            return (
+                optimized_cn,
+                optimized_en,
+                f"已使用 Ollama（{settings.ollama_model}）生成中文说明与英文绘图提示词",
+                "ollama",
+            )
+        except PromptOptimizerError:
+            if not settings.prompt_optimizer_fallback_rules:
+                raise
+
+    if provider == "openai":
+        if not settings.openai_api_key:
+            raise PromptOptimizerError("未配置 OPENAI_API_KEY，请在 backend/.env 中设置")
         try:
             optimized_cn, optimized_en = await _optimize_with_openai(original)
             return (
                 optimized_cn,
                 optimized_en,
-                "已使用 AI 生成中文说明与英文绘图提示词",
+                "已使用 OpenAI 生成中文说明与英文绘图提示词",
                 "openai",
             )
         except PromptOptimizerError:

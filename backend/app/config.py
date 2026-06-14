@@ -51,11 +51,16 @@ class Settings(BaseSettings):
     stable_horde_max_wait_seconds: float = 180.0
     stable_horde_models: str = ""
 
-    # 提示词优化
-    prompt_optimizer_use_openai: bool = True
+    # 提示词优化（ollama=本地 Ollama / openai=OpenAI / rules=规则）
+    prompt_optimizer_provider: str = "ollama"
     prompt_optimizer_fallback_rules: bool = True
+    prompt_optimizer_use_openai: bool = False
     prompt_optimizer_model: str = "gpt-4o-mini"
     prompt_optimizer_timeout_seconds: float = 30.0
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b"
+    ollama_timeout_seconds: float = 120.0
+    ollama_temperature: float = 0.7
 
     # 生成历史
     history_enabled: bool = True
