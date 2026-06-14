@@ -3,8 +3,10 @@
 前后端分离的 AI 语音绘图工具：说出或输入画面描述，**阿里云百炼** 负责语音识别、提示词优化与图像生成，并自动保存历史记录。
 
 **仓库**：https://github.com/continuestudycome/AIDrawLzq
+
 **视频百度网盘地址**:通过网盘分享的文件：廖志强-AI语音绘图工具.mp4
 链接: https://pan.baidu.com/s/1UX668mvTETe1urO_ExLYrQ?pwd=LZQQ 提取码: LZQQ
+
 **BiliBili地址**：https://www.bilibili.com/video/BV13VJP6UEat/?spm_id_from=333.1387.homepage.video_card.click&vd_source=ac170834a6f3e4fa000b758817b909f5
 
 ## 功能概览
