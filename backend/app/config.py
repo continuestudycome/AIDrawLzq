@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     stable_horde_steps: int = 28
     stable_horde_poll_interval: float = 3.0
     stable_horde_max_wait_seconds: float = 180.0
-    stable_horde_models: str = "Deliberate"
+    stable_horde_connect_timeout_seconds: float = 30.0
+    stable_horde_request_timeout_seconds: float = 90.0
+    stable_horde_models: str = ""
     stable_horde_negative_prompt: str = (
         "low quality, blurry, distorted, deformed, ugly, bad anatomy, bad hands, "
         "extra limbs, text, watermark, logo, signature, cropped, worst quality"

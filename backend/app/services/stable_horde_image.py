@@ -9,9 +9,48 @@ import httpx
 from app.config import settings
 from app.services.image_fetch import download_image_as_data_url
 
+_REQUEST_RETRIES = 4
+_RETRY_BACKOFF_SECONDS = (2.0, 4.0, 8.0)
+
 
 class StableHordeError(Exception):
     """Stable Horde 调用失败。"""
+
+
+def _build_horde_client() -> httpx.AsyncClient:
+    timeout = httpx.Timeout(
+        settings.stable_horde_request_timeout_seconds,
+        connect=settings.stable_horde_connect_timeout_seconds,
+    )
+    return httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        trust_env=True,
+        http2=False,
+    )
+
+
+async def _request_with_retry(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    **kwargs,
+) -> httpx.Response:
+    last_error: httpx.RequestError | None = None
+
+    for attempt in range(_REQUEST_RETRIES):
+        try:
+            return await client.request(method, url, **kwargs)
+        except httpx.RequestError as exc:
+            last_error = exc
+            if attempt >= _REQUEST_RETRIES - 1:
+                break
+            await asyncio.sleep(_RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)])
+
+    raise StableHordeError(
+        f"Stable Horde 连接失败: {last_error}。"
+        "请检查网络能否访问 stablehorde.net，或稍后重试"
+    ) from last_error
 
 
 async def generate_stable_horde_data_url(
@@ -47,8 +86,14 @@ async def generate_stable_horde_data_url(
     base_url = settings.stable_horde_base_url.rstrip("/")
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            submit = await client.post(f"{base_url}/generate/async", headers=headers, json=payload)
+        async with _build_horde_client() as client:
+            submit = await _request_with_retry(
+                client,
+                "POST",
+                f"{base_url}/generate/async",
+                headers=headers,
+                json=payload,
+            )
             if submit.status_code >= 400:
                 detail = submit.text.strip() or submit.reason_phrase
                 raise StableHordeError(f"提交生成任务失败 ({submit.status_code}): {detail}")
@@ -60,7 +105,9 @@ async def generate_stable_horde_data_url(
             poll_headers = {"apikey": settings.stable_horde_api_key}
             elapsed = 0.0
             while elapsed < settings.stable_horde_max_wait_seconds:
-                check = await client.get(
+                check = await _request_with_retry(
+                    client,
+                    "GET",
                     f"{base_url}/generate/check/{job_id}",
                     headers=poll_headers,
                 )
@@ -81,7 +128,9 @@ async def generate_stable_horde_data_url(
                     f"免费队列等待超时（>{int(settings.stable_horde_max_wait_seconds)} 秒），请稍后重试"
                 )
 
-            status = await client.get(
+            status = await _request_with_retry(
+                client,
+                "GET",
                 f"{base_url}/generate/status/{job_id}",
                 headers=poll_headers,
             )

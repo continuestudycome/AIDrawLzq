@@ -36,7 +36,7 @@ def build_placeholder_image_data_url(
     {line_elements}
     {extra_hint}
   </text>
-  <text x="50%" y="88%" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="Segoe UI, sans-serif">AI 绘图服务尚未接入</text>
+  <text x="50%" y="88%" text-anchor="middle" fill="#94a3b8" font-size="13" font-family="Segoe UI, sans-serif">Stable Horde 排队超时，请稍后重试或更换模型</text>
 </svg>"""
 
     encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")

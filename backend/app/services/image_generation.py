@@ -6,7 +6,6 @@ import httpx
 
 from app.config import settings
 from app.services.image_fetch import download_image_as_data_url
-from app.services.placeholder_image import build_placeholder_image_data_url
 from app.services.pollinations_image import build_pollinations_image_url
 from app.services.stable_horde_image import StableHordeError, generate_stable_horde_data_url
 
@@ -148,11 +147,11 @@ async def _generate_free_image_data_url(
         image_url = await generate_stable_horde_data_url(prompt, width=width, height=height)
         return image_url, "图像已生成（Stable Horde 免费服务，排队可能需要 1-3 分钟）"
     except StableHordeError as exc:
-        fallback_url = build_placeholder_image_data_url(prompt, width=width, height=height)
-        return (
-            fallback_url,
-            f"Stable Horde 暂不可用：{exc}。已显示占位预览图",
-        )
+        raise ImageGenerationError(
+            f"Stable Horde 生图失败：{exc}。"
+            "可尝试：1) 稍后重试 2) 清空 STABLE_HORDE_MODELS 使用任意可用模型 "
+            "3) 注册专属 Key 提升优先级 4) 配置 OpenAI DALL·E"
+        ) from exc
 
 
 async def generate_image(

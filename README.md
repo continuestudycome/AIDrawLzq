@@ -1,113 +1,59 @@
 # AI 语音绘图
 
-前后端分离的 AI 语音绘图工具：前端 Vue 3 负责录音与展示，后端 FastAPI 负责语音识别与图像生成。
+前后端分离的 AI 语音绘图工具：说出或输入画面描述，本地 Whisper 识别语音，Ollama 优化提示词，Stable Horde 免费生图，并自动保存历史记录。
 
-## 第三方依赖
+**仓库**：https://github.com/continuestudycome/AIDrawLzq
 
-### 后端（Python）
+## 功能概览
 
-| 库 | 用途 |
-|----|------|
-| [FastAPI](https://fastapi.tiangolo.com/) | Web API 框架 |
-| [Uvicorn](https://www.uvicorn.org/) | ASGI 服务器 |
-| [python-multipart](https://github.com/Kludex/python-multipart) | 上传语音文件解析 |
-| [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | 环境变量与配置管理 |
-| [httpx](https://www.python-httpx.org/) | 调用 OpenAI、Stable Horde 等 HTTP 服务 |
-| [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | 本地 Whisper 语音识别（免费） | 步骤 6 |
+| 能力 | 说明 | 默认方案 | 费用 |
+|------|------|----------|------|
+| 语音输入 | 浏览器录音 → 后端识别 | 本地 faster-whisper | 免费 |
+| 提示词优化 | 短描述扩展为中英文绘图提示词 | Ollama `qwen2.5:7b` | 免费（本地） |
+| 图像生成 | 文本 → 图片 | Stable Horde | 免费（排队） |
+| 生成历史 | 时间、提示词、图片本地持久化 | `backend/data/history/` | 免费 |
 
-### 前端（Node.js）
-
-| 库 | 用途 |
-|----|------|
-| [Vue 3](https://vuejs.org/) | 前端 UI 框架 |
-| [Vite](https://vite.dev/) | 开发与构建工具 |
-| [TypeScript](https://www.typescriptlang.org/) | 类型检查 |
-| [@vitejs/plugin-vue](https://github.com/vitejs/vite-plugin-vue) | Vite 的 Vue 插件 |
-| [vue-tsc](https://github.com/vuejs/language-tools) | Vue 单文件组件类型检查 |
-
-### 外部 AI 服务
-
-| 服务 | 用途 | 步骤 | 是否需要 Key |
-|------|------|------|--------------|
-| [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) | 语音转文字 | 步骤 2 | 是 |
-| [OpenAI Images API (DALL·E)](https://platform.openai.com/docs/api-reference/images) | 文本生成图像 | 步骤 3 | 是 |
-| [Pollinations.ai](https://pollinations.ai/) | 文本生成图像（已收费 402，不推荐） | 步骤 4 | 否（已不可用） |
-| [Ollama](https://ollama.com/) | 本地大模型提示词优化 | 步骤 7 | 否（本地运行） |
-
-## 原创功能
-
-以下为项目自行实现的功能（非第三方库直接提供）：
-
-| 模块 | 说明 |
-|------|------|
-| 语音录音与识别 | 前端 MediaRecorder 录音，停止后上传后端本地 Whisper 识别为文字 |
-| 本地 Whisper 识别 | 后端 `app/services/local_speech_recognition.py`，免费离线，国内可用 |
-| 图像生成编排 | 后端 `app/services/image_generation.py` 统一调度 OpenAI / Stable Horde / Pollinations |
-| Stable Horde 免费绘图 | 后端 `app/services/stable_horde_image.py` 提交异步任务、轮询并下载图片 |
-| 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
-| Pollinations URL 构建 | 后端 `app/services/pollinations_image.py` 构建 Pollinations 图片地址（服务已收费时自动跳过） |
-| 占位图像生成 | 后端 `app/services/placeholder_image.py` 在免费服务超时/不可用时返回 SVG 占位图 |
-| 提示词优化 | 默认调用 **Ollama** 本地大模型，生成中文展示版与英文绘图版；失败时可回退规则优化 |
-| 生成历史 | 后端 `app/services/history_store.py` 保存时间、中英文提示词与图片到 `backend/data/history/` |
-| API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成、历史记录请求 |
-| 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
-
-## 开发进度
-
-- [x] **步骤 1**：后端占位图像生成（`/api/transcript`、`/api/generate` 返回可预览 SVG）
-- [x] **步骤 2**：接入 OpenAI Whisper 语音识别（`/api/speech-to-text`）
-- [x] **步骤 3**：接入 OpenAI DALL·E 图像生成（`/api/transcript`、`/api/generate`）
-- [x] **步骤 4**：接入 Pollinations 免费图像生成
-- [x] **步骤 4 修复**：Pollinations 收费后改用 Stable Horde，后端转 data URL 修复裂图
-- [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
-- [x] **步骤 6**：后端本地 Whisper 免费语音识别（录音 → 停止 → 文字填入文本框）
-- [x] **生成历史**：自动保存生成时间、提示词与图片，支持查看与删除
-- [x] **Ollama 提示词优化**：调用本地大模型扩展用户输入为中英文绘图提示词
-
-## 项目结构
+## 推荐工作流
 
 ```
-.
-├── backend/               # FastAPI 后端
-│   ├── app/
-│   │   ├── main.py        # FastAPI 入口
-│   │   ├── config.py      # 配置
-│   │   ├── routers/       # API 路由
-│   │   ├── schemas/       # 请求/响应模型
-│   │   └── services/      # 业务服务（语音识别、图像生成等）
-│   ├── requirements.txt
-│   └── .env.example
-└── frontend/              # Vue 3 前端
-    ├── src/
-    ├── vite.config.ts
-    └── package.json
+点击 🎤 录音 → 停止 → 文字填入文本框
+    ↓
+点击「✨ 优化提示词」（生成中文展示 + 英文绘图版）
+    ↓
+点击「生成图像」（使用英文版，等待 1–3 分钟）
+    ↓
+预览区显示结果，左侧「历史」可回看
 ```
+
+> **重要**：Stable Horde 免费模型主要理解**英文关键词**。请尽量先优化提示词，不要直接用中文生图。
 
 ## 快速开始
 
 ### 1. 后端
 
-```bash
+```powershell
 cd backend
 
-# 激活虚拟环境（Windows）
+# 创建并激活虚拟环境（首次）
+python -m venv .venv
 .\.venv\Scripts\activate
 
 # 安装依赖
 pip install -r requirements.txt
 
-# 复制环境变量（无 API Key 也可使用 Stable Horde 免费绘图）
+# 复制环境变量（无 API Key 也可使用 Stable Horde + 本地 Whisper）
 copy .env.example .env
 
 # 启动服务
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\uvicorn.exe app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-API 文档：http://127.0.0.1:8000/docs
+- API 文档：http://127.0.0.1:8000/docs
+- 健康检查：http://127.0.0.1:8000/health
 
 ### 2. 前端
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
@@ -115,233 +61,283 @@ npm run dev
 
 访问：http://localhost:5173
 
-前端已通过 Vite 代理将 `/api` 和 `/health` 转发到后端 `8000` 端口。
+前端通过 Vite 代理将 `/api`、`/health` 转发到后端 `8000` 端口。
 
-> **注意**：请确保 8000 端口只运行一个后端进程，避免旧进程返回过期响应。
+> **注意**：请确保 8000 端口只运行**一个**后端进程，避免旧进程返回过期响应。修改 `backend/.env` 后需**重启后端**。
 
-## 语音识别（步骤 6，免费推荐）
+### 3. 可选依赖
 
-**录音 → 停止 → 文字自动填入下方文本框**，不依赖浏览器语音识别，国内可用。
+| 组件 | 何时需要 | 安装方式 |
+|------|----------|----------|
+| Whisper 模型 | 首次语音识别 | `python scripts/download_whisper_model.py` |
+| Ollama | 提示词优化 | [ollama.com](https://ollama.com/) → `ollama pull qwen2.5:7b` |
+| OpenAI Key | DALL·E / Whisper API | 在 `.env` 配置 `OPENAI_API_KEY` |
 
-| 项目 | 说明 |
-|------|------|
-| 技术 | 前端 MediaRecorder 录音 + 后端 faster-whisper 本地识别 |
-| 费用 | 免费，无需 API Key |
-| 网络 | 首次运行需下载模型（约 150MB），之后可离线识别 |
-| 用法 | 点击 🎤 开始录音 → 说话 → 再点 ■ 停止 → 文字出现在文本框 |
+## 项目结构
 
-### 配置
+```
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI 入口，Ollama 启动预热
+│   │   ├── config.py               # 环境变量与默认配置
+│   │   ├── routers/
+│   │   │   ├── draw.py             # 语音识别 / 优化 / 生图
+│   │   │   ├── health.py           # 健康检查（含 provider 状态）
+│   │   │   └── history.py          # 历史记录 CRUD
+│   │   ├── schemas/                # Pydantic 请求/响应模型
+│   │   └── services/
+│   │       ├── draw_pipeline.py    # 生图编排 + 历史写入
+│   │       ├── local_speech_recognition.py
+│   │       ├── ollama_client.py
+│   │       ├── prompt_optimizer.py
+│   │       ├── stable_horde_image.py
+│   │       ├── image_generation.py
+│   │       └── history_store.py
+│   ├── tests/                      # pytest 单元测试
+│   ├── scripts/
+│   │   └── download_whisper_model.py
+│   ├── data/history/               # 生成历史（运行时自动创建）
+│   ├── requirements.txt
+│   └── .env.example
+└── frontend/
+    ├── src/
+    │   ├── App.vue                 # 主界面
+    │   ├── api/draw.ts             # API 封装
+    │   ├── components/
+    │   │   ├── HistorySidebar.vue
+    │   │   └── ConfirmDialog.vue
+    │   └── composables/
+    │       ├── useVoiceRecording.ts
+    │       └── useHistory.ts
+    └── vite.config.ts
+```
+
+## 配置说明
+
+所有配置项写在 `backend/.env`，完整示例见 `backend/.env.example`。
+
+### 语音识别（默认：本地 Whisper，免费）
 
 ```env
 SPEECH_PROVIDER=local
 WHISPER_LOCAL_MODEL=base
+HUGGINGFACE_ENDPOINT=https://hf-mirror.com
+HUGGINGFACE_HUB_DISABLE_SSL=true
 ```
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `SPEECH_PROVIDER` | `local` | `local` / `openai` / `auto` |
-| `WHISPER_LOCAL_MODEL` | `base` | 模型：`tiny`（快）/ `base`（推荐）/ `small` |
-| `WHISPER_LOCAL_LANGUAGE` | `zh` | 识别语言 |
-| `WHISPER_LOCAL_DEVICE` | `cpu` | 运行设备 |
-| `WHISPER_LOCAL_COMPUTE_TYPE` | `int8` | 量化类型，CPU 推荐 int8 |
+| `WHISPER_LOCAL_MODEL` | `base` | `tiny`（快）/ `base`（推荐）/ `small` |
+| `WHISPER_LOCAL_MODEL_PATH` | （空） | 本地模型目录，跳过在线下载 |
 | `HUGGINGFACE_ENDPOINT` | `https://hf-mirror.com` | Hugging Face 国内镜像 |
 | `HUGGINGFACE_HUB_DISABLE_SSL` | `true` | 解决 Windows SSL 证书问题 |
-| `WHISPER_LOCAL_MODEL_PATH` | （空） | 本地已下载模型目录，跳过在线下载 |
 
-首次识别会自动下载 Whisper 模型，可能需要几分钟。
-
-**若报 SSL 证书错误**，按顺序尝试：
-
-1. 确认 `backend/.env` 已设置镜像（并重启后端）：
-
-```env
-HUGGINGFACE_ENDPOINT=https://hf-mirror.com
-HUGGINGFACE_HUB_DISABLE_SSL=true
-```
-
-2. **推荐**：手动预下载模型（避免首次识别时在线拉取）：
+**预下载 Whisper 模型（推荐）**：
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe scripts\download_whisper_model.py
 ```
 
-下载完成后在 `.env` 添加（脚本会打印路径）：
+完成后在 `.env` 设置脚本输出的 `WHISPER_LOCAL_MODEL_PATH`。
+
+### 图像生成（默认：Stable Horde，免费）
 
 ```env
-WHISPER_LOCAL_MODEL_PATH=D:/七牛云/backend/models/faster-whisper-base
-```
-
-### 首次使用（安装）
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
-.\.venv\Scripts\python.exe scripts\download_whisper_model.py
-```
-
-### 可选：OpenAI Whisper API
-
-```env
-SPEECH_PROVIDER=openai
-OPENAI_API_KEY=sk-your-key-here
-```
-
-## 图像生成配置（步骤 3 / 4）
-
-**无 API Key 推荐配置**：使用 Stable Horde 免费服务（匿名 Key，无需注册）。
-
-```env
-# 推荐：Stable Horde 免费服务
 IMAGE_PROVIDER=stablehorde
-
-# 或有 OpenAI Key 时
-OPENAI_API_KEY=sk-your-key-here
-IMAGE_PROVIDER=openai
-IMAGE_MODEL=dall-e-3
+STABLE_HORDE_MODELS=
+STABLE_HORDE_STEPS=28
 ```
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IMAGE_PROVIDER` | `stablehorde` | `stablehorde` / `openai` / `auto` / `pollinations` |
+| `STABLE_HORDE_API_KEY` | `0000000000` | 匿名 Key；[注册](https://stablehorde.net/register) 后可换专属 Key 提升优先级 |
+| `STABLE_HORDE_MAX_WAIT_SECONDS` | `180` | 免费队列最长等待（秒） |
+| `STABLE_HORDE_STEPS` | `28` | 生成步数 |
+| `STABLE_HORDE_MODELS` | （留空） | 指定模型名，逗号分隔；**留空**使用任意可用 worker（匿名 Key 推荐） |
+| `STABLE_HORDE_CONNECT_TIMEOUT_SECONDS` | `30` | 连接超时（秒） |
+| `STABLE_HORDE_REQUEST_TIMEOUT_SECONDS` | `90` | 单次请求超时（秒） |
+| `STABLE_HORDE_NEGATIVE_PROMPT` | （内置） | 负面提示词，过滤低质量结果 |
 
 提供方说明：
 
 | 值 | 说明 |
 |----|------|
-| `stablehorde` / `free` | **推荐**。Stable Horde 免费生成，排队约 1-3 分钟 |
+| `stablehorde` / `free` | **推荐**。Stable Horde 免费生成，排队约 1–3 分钟 |
 | `auto` | 有 OpenAI Key 用 DALL·E，否则走 Stable Horde |
-| `openai` | 强制使用 DALL·E（需 Key） |
-| `pollinations` | Pollinations（`image.pollinations.ai` 已返回 402 需付费，不推荐） |
+| `openai` | 强制 DALL·E（需 Key） |
+| `pollinations` | 已返回 402 需付费，不推荐 |
 
-可选配置：
+**OpenAI DALL·E 示例**：
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `IMAGE_PROVIDER` | `auto` | `auto` / `openai` / `stablehorde` / `free` / `pollinations` |
-| `IMAGE_API_KEY` | （复用 `OPENAI_API_KEY`） | 单独指定图像生成 Key |
-| `IMAGE_MODEL` | `dall-e-3` | OpenAI 模型 |
-| `IMAGE_QUALITY` | `standard` | DALL·E 3 画质 |
-| `STABLE_HORDE_API_KEY` | `0000000000` | 匿名 Key；注册后可换专属 Key 提升优先级 |
-| `STABLE_HORDE_MAX_WAIT_SECONDS` | `180` | 免费队列最长等待（秒） |
-| `STABLE_HORDE_STEPS` | `28` | 生成步数，略高更清晰 |
-| `STABLE_HORDE_MODELS` | `Deliberate` | 指定模型，避免随机分配到差模型 |
-| `POLLINATIONS_BASE_URL` | `https://image.pollinations.ai` | Pollinations 地址（已收费） |
-| `IMAGE_TIMEOUT_SECONDS` | `120` | HTTP 请求超时（秒） |
-
-## 提示词优化配置（Ollama）
-
-默认使用本地 **Ollama** 将用户输入的实体词/短描述扩展为中英文绘图提示词。
-
-### 安装与启动 Ollama
-
-1. 安装 [Ollama](https://ollama.com/)
-2. 拉取模型（推荐中文能力较好的模型）：
-
-```powershell
-ollama pull qwen2.5:7b
+```env
+OPENAI_API_KEY=sk-your-key-here
+IMAGE_PROVIDER=openai
+IMAGE_MODEL=dall-e-3
 ```
 
-推荐 `qwen2.5:7b`（质量更好）；若追求速度可改用 `qwen2.5:3b` / `qwen2.5:1.5b`。
-
-3. 确认服务运行（安装后通常自动启动）：
-
-```powershell
-ollama serve
-```
-
-### 配置
+### 提示词优化（默认：Ollama，免费）
 
 ```env
 PROMPT_OPTIMIZER_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_KEEP_ALIVE=30m
+OLLAMA_WARMUP_ON_STARTUP=true
 ```
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PROMPT_OPTIMIZER_PROVIDER` | `ollama` | `ollama` / `openai` / `rules` |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama API 地址 |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | 本地模型，越大质量越好 |
-| `OLLAMA_TIMEOUT_SECONDS` | `120` | 请求超时（秒） |
-| `OLLAMA_NUM_PREDICT` | `256` | 最大生成长度，越小越快 |
-| `OLLAMA_NUM_CTX` | `2048` | 上下文窗口，越小越快 |
-| `OLLAMA_KEEP_ALIVE` | `30m` | 模型驻留内存时长，避免每次冷启动 |
-| `OLLAMA_WARMUP_ON_STARTUP` | `true` | 后端启动时预加载模型 |
-| `OLLAMA_CACHE_ENABLED` | `true` | 相同输入命中缓存，秒级返回 |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | 推荐；追求速度可换 `qwen2.5:3b` |
+| `OLLAMA_NUM_PREDICT` | `256` | 最大生成长度 |
+| `OLLAMA_CACHE_ENABLED` | `true` | 相同输入命中缓存 |
 | `PROMPT_OPTIMIZER_FALLBACK_RULES` | `true` | Ollama 失败时回退规则优化 |
 
-### 缩短等待时间
+安装 Ollama 并拉取模型：
 
-1. **换小模型**：默认 `qwen2.5:7b`；若太慢可试 `qwen2.5:3b` / `qwen2.5:1.5b`
-2. **保持模型在内存**：默认 `OLLAMA_KEEP_ALIVE=30m`，连续优化会快很多
-3. **后端启动预热**：`OLLAMA_WARMUP_ON_STARTUP=true`，首次点击不必等加载
-4. **限制输出长度**：`OLLAMA_NUM_PREDICT=256` 足够生成 JSON 提示词
-5. **有 NVIDIA 显卡**：Ollama 会自动用 GPU，速度显著快于纯 CPU
-6. **相同输入走缓存**：重复优化同一提示词几乎即时返回
+```powershell
+ollama pull qwen2.5:7b
+ollama serve   # 通常安装后已自动运行
+```
 
-### 用法
+### 生成历史
 
-输入简短描述（如「猪」「赛博朋克风格的猫」）→ 点击 **「✨ 优化提示词」** → 输入框显示中文说明，英文版用于生成图像。
+```env
+HISTORY_ENABLED=true
+HISTORY_MAX_ITEMS=100
+```
+
+历史保存在 `backend/data/history/`（JSON 元数据 + 图片文件）。响应字段 `history_saved=false` 表示图片已生成但写入历史失败。
 
 ## API 概览
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/health` | 健康检查（含 speech/image/prompt 提供方与 Ollama 可达性） |
-| POST | `/api/speech-to-text` | 上传录音，本地 Whisper 或 OpenAI 识别为文本 |
-| POST | `/api/optimize-prompt` | 优化提示词，返回 `optimized`（中文展示）与 `optimized_en`（英文绘图） |
-| POST | `/api/generate` | **主接口**：根据提示词生成图像（响应含 `history_saved`） |
-| POST | `/api/transcript` | 已弃用，等价于 `/api/generate`（兼容旧客户端） |
-| GET | `/api/history` | 获取生成历史列表 |
-| GET | `/api/history/{id}/image` | 获取历史记录中的图片 |
-| DELETE | `/api/history/{id}` | 删除一条历史记录 |
+| GET | `/health` | 健康检查 |
+| POST | `/api/speech-to-text` | 上传录音，Whisper 识别为文本 |
+| POST | `/api/optimize-prompt` | 优化提示词 → `optimized`（中文）+ `optimized_en`（英文） |
+| POST | `/api/generate` | **主接口**：生成图像 |
+| POST | `/api/transcript` | 已弃用，等价于 `/api/generate` |
+| GET | `/api/history` | 历史列表 |
+| GET | `/api/history/{id}/image` | 历史图片 |
+| DELETE | `/api/history/{id}` | 删除一条历史 |
+
+### `/health` 响应示例
+
+```json
+{
+  "status": "ok",
+  "speech_provider": "local",
+  "image_provider": "stablehorde",
+  "prompt_optimizer": "ollama",
+  "history_enabled": true,
+  "ollama_available": true
+}
+```
+
+### `/api/generate` 请求示例
+
+```json
+{
+  "prompt": "a cute pink pig on a sunny farm, photorealistic",
+  "display_prompt": "一只可爱的粉色小猪，站在阳光下的农场草地上"
+}
+```
+
+响应含 `image_url`（data URL 或历史图片地址）、`message`、`history_id`、`history_saved`。
 
 ## 常见问题
 
-### 提示词太短，生成结果不对？
+### 图片一直生成不出来？
 
-1. **先点「优化提示词」**，再点「生成图像」——免费 Stable Horde 主要理解**英文关键词**，不要直接用中文生图
-2. 展开「查看英文绘图提示词」，确认主体词（如 `pig`、`cat`）在英文里且靠前
-3. 默认已指定 `Deliberate` 模型并加入负面提示词，重启后端后生效
+按顺序排查：
 
-### 生成图片和描述差很多？
+1. **是否先点了「优化提示词」？** 中文直出效果差且易失败，应使用英文 `optimized_en` 生图
+2. **是否等待足够久？** 免费队列通常需 **1–3 分钟**，界面会显示「正在生成图像…」
+3. **Stable Horde 连接失败**（`All connection attempts failed`）  
+   - 服务器在境外，国内网络可能不稳定  
+   - 检查能否访问 https://stablehorde.net  
+   - 换网络、开代理，或稍后重试（后端已内置自动重试）  
+   - 或改用 OpenAI DALL·E
+4. **排队超时**（`>180 秒`）  
+   - 确认 `.env` 中 `STABLE_HORDE_MODELS` **留空**（不要锁 `Deliberate` 等热门模型）  
+   - 或注册专属 Key 提升优先级  
+   - 可适当增大 `STABLE_HORDE_MAX_WAIT_SECONDS`
 
-常见原因：
+### 生成结果和描述差很多？
 
 | 原因 | 处理 |
 |------|------|
-| 未优化，直接用中文生图 | 先「优化提示词」，用英文版生图 |
-| 免费队列随机模型（旧配置） | `.env` 设置 `STABLE_HORDE_MODELS=Deliberate` |
-| 提示词太抽象 | 优化后补充具体场景、风格、光线 |
-| 免费模型能力有限 | 注册 [Stable Horde](https://stablehorde.net/register) 换专属 Key，或配置 OpenAI DALL·E |
-
-免费服务本身有随机性，同一提示词多次生成结果也可能不同，可多试几次。
+| 未优化，直接用中文生图 | 先「优化提示词」，确认英文版含主体词（如 `pig`、`cat`） |
+| 指定热门模型排队过久 | 清空 `STABLE_HORDE_MODELS` |
+| 提示词太抽象 | 补充场景、风格、光线等具体描述 |
+| 免费模型能力有限 | 注册 Stable Horde Key 或配置 OpenAI DALL·E |
 
 ### Ollama 优化失败？
 
-1. 确认 Ollama 已运行：`ollama serve`
+1. 确认 Ollama 运行：`ollama serve`
 2. 确认模型已下载：`ollama pull qwen2.5:7b`
-3. 检查 `backend/.env` 中 `OLLAMA_MODEL` 与已拉取的模型名一致
+3. 检查 `.env` 中 `OLLAMA_MODEL` 与已拉取模型名一致
+4. 访问 `/health` 查看 `ollama_available` 是否为 `true`
 
-### 显示「图像已生成」但预览区裂图？
+### 语音识别没反应？
 
-Pollinations 免费 API 已返回 **402 需付费**。请改用：
+1. 右上角应显示「**后端已连接**」
+2. 点击 🎤 开始 → 说话 → **再点 ■ 停止**（需点两次）
+3. 首次使用需下载 Whisper 模型，请耐心等待
+4. 若报 SSL 错误，设置 `HUGGINGFACE_ENDPOINT` 并预下载模型（见上文）
+
+### 预览区裂图？
+
+Pollinations 已返回 402 需付费。请确认：
 
 ```env
 IMAGE_PROVIDER=stablehorde
 ```
 
-并重启后端。新版会将图片下载为 **data URL** 再返回，避免浏览器无法加载外链。
+后端会将远程图片下载为 **data URL** 再返回，避免浏览器无法加载外链。
 
-### 生成很慢？
+## 开发与测试
 
-Stable Horde 免费匿名队列可能需要 **1-3 分钟**甚至更久，属正常现象。可在 [stablehorde.net](https://stablehorde.net/register) 注册获取专属 Key 提升优先级。
+### 运行单元测试
 
-### 语音识别没反应？
+```powershell
+cd backend
+.\.venv\Scripts\pip.exe install pytest
+.\.venv\Scripts\python.exe -m pytest tests/ -q
+```
 
-1. 确认**后端已启动**（右上角显示「后端已连接」）
-2. 点击 🎤 开始 → 说话 → **再点 ■ 停止**（必须点两次）
-3. 等待「正在识别语音…」，文字会填入下方文本框
-4. 首次使用需下载 Whisper 模型，请耐心等待
+覆盖 provider 解析、规则优化、JSON 解析等核心逻辑。
+
+### 第三方依赖
+
+**后端**：FastAPI、Uvicorn、faster-whisper、httpx、pydantic-settings、pytest
+
+**前端**：Vue 3、Vite、TypeScript
+
+**外部 AI 服务**：
+
+| 服务 | 用途 | 是否需要 Key |
+|------|------|--------------|
+| [Stable Horde](https://stablehorde.net/) | 免费文本生图 | 否（匿名 Key） |
+| [Ollama](https://ollama.com/) | 本地提示词优化 | 否 |
+| [OpenAI](https://platform.openai.com/) | Whisper / DALL·E | 是 |
+| [Pollinations.ai](https://pollinations.ai/) | 文本生图 | 已收费，不推荐 |
+
+## 开发进度
+
+- [x] 占位图 → OpenAI DALL·E → Pollinations → **Stable Horde** 免费生图
+- [x] 本地 Whisper 语音识别（MediaRecorder + faster-whisper）
+- [x] Ollama 提示词优化（中英文双版本）
+- [x] 生成历史（侧边栏、删除确认、本地持久化）
+- [x] 架构重构（`draw_pipeline`、前端 composables、`/api/generate` 主接口、health 增强、pytest）
+- [x] Stable Horde 连接重试、超时配置优化
 
 ## 下一步
 
-- 增加 WebSocket 流式识别与生成进度
+- WebSocket 流式识别与生图进度
+- 异步生图任务（避免长时间阻塞 HTTP 请求）
