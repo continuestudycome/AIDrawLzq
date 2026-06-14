@@ -134,6 +134,12 @@ h1 {
   color: #cbd5e1;
 }
 
+.speech-hint {
+  margin: 0;
+  color: #86efac;
+  font-size: 0.85rem;
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -40,8 +40,8 @@
 
 | 模块 | 说明 |
 |------|------|
-| 语音录音流程 | 前端使用浏览器 `MediaRecorder` 采集麦克风，录音结束后上传后端 |
-| 语音识别编排 | 后端 `app/services/speech_recognition.py` 封装 Whisper API 调用、错误处理与配置读取 |
+| 语音录音与识别 | 前端使用浏览器 Web Speech API 免费语音识别（Chrome/Edge），无需 API Key |
+| 语音识别（可选） | 后端 `app/services/speech_recognition.py` 封装 Whisper API（需 OpenAI Key） |
 | 图像生成编排 | 后端 `app/services/image_generation.py` 统一调度 OpenAI / Stable Horde / Pollinations |
 | Stable Horde 免费绘图 | 后端 `app/services/stable_horde_image.py` 提交异步任务、轮询并下载图片 |
 | 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
@@ -59,7 +59,7 @@
 - [x] **步骤 4**：接入 Pollinations 免费图像生成
 - [x] **步骤 4 修复**：Pollinations 收费后改用 Stable Horde，后端转 data URL 修复裂图
 - [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
-- [ ] **步骤 5**：接入浏览器免费语音识别（Web Speech API）
+- [x] **步骤 5**：接入浏览器免费语音识别（Web Speech API，无需 API Key）
 
 ## 项目结构
 
@@ -116,9 +116,21 @@ npm run dev
 
 > **注意**：请确保 8000 端口只运行一个后端进程，避免旧进程返回过期响应。
 
-## 语音识别配置（步骤 2）
+## 语音识别（步骤 5，免费）
 
-在 `backend/.env` 中设置：
+**默认使用浏览器免费语音识别**，无需 API Key，也无需后端参与。
+
+| 项目 | 说明 |
+|------|------|
+| 技术 | Web Speech API（Chrome / Edge 内置） |
+| 费用 | 免费 |
+| 网络 | 优先本地离线识别；云端模式需可访问 Google 服务 |
+| 国内网络 | 若云端失败，会自动尝试 Chrome 本地语音包；仍失败请手动输入 |
+| 用法 | 点击麦克风 → 说话 → 自动识别并填入文本框 |
+
+### 可选：后端 Whisper（步骤 2）
+
+若配置了 OpenAI Key，也可通过 `POST /api/speech-to-text` 使用 Whisper，但前端默认已改用浏览器免费方案。
 
 ```env
 OPENAI_API_KEY=sk-your-key-here
@@ -131,7 +143,7 @@ SPEECH_LANGUAGE=zh
 |------|--------|------|
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | 兼容 OpenAI 格式的代理地址 |
 | `SPEECH_MODEL` | `whisper-1` | Whisper 模型 |
-| `SPEECH_LANGUAGE` | `zh` | 语言提示，提升中文识别准确率 |
+| `SPEECH_LANGUAGE` | `zh` | 语言提示 |
 | `SPEECH_TIMEOUT_SECONDS` | `60` | 请求超时（秒） |
 
 ## 图像生成配置（步骤 3 / 4）
@@ -176,7 +188,7 @@ IMAGE_MODEL=dall-e-3
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/health` | 健康检查 |
-| POST | `/api/speech-to-text` | 上传语音，Whisper 识别为文本 |
+| POST | `/api/speech-to-text` | 可选，上传语音由 Whisper 识别（需 OpenAI Key） |
 | POST | `/api/optimize-prompt` | 优化提示词，扩展为更详细的绘图描述 |
 | POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
 | POST | `/api/generate` | 根据提示词生成图像 |
@@ -201,11 +213,16 @@ IMAGE_PROVIDER=stablehorde
 
 Stable Horde 免费匿名队列可能需要 **1-3 分钟**甚至更久，属正常现象。可在 [stablehorde.net](https://stablehorde.net/register) 注册获取专属 Key 提升优先级。
 
-### 语音识别报错？
+### 语音识别报「需要网络连接」？
 
-语音识别仍依赖 OpenAI Whisper，无 Key 时会失败。可手动输入提示词生成图像，或等待步骤 5 接入浏览器免费语音识别。
+Chrome 云端语音识别依赖 Google 服务，国内网络常不可用。当前版本会：
+
+1. **优先尝试 Chrome 本地离线语音包**（无需外网）
+2. 本地不可用时再尝试云端
+3. 若仍失败，请**手动输入提示词**，或更新 Chrome 到最新版并在设置中下载中文语音包
+
+请使用 **Chrome 142+ 或 Edge** 浏览器，并允许麦克风权限。
 
 ## 下一步
 
-- 步骤 5：接入浏览器免费语音识别（Web Speech API）
 - 增加 WebSocket 流式识别与生成进度
