@@ -12,30 +12,35 @@ class OllamaError(Exception):
 
 
 OLLAMA_SYSTEM_PROMPT = (
-    "你是 AI 绘图提示词专家。用户会输入简短的实体词、场景或画面描述（多为中文）。"
-    "请将其扩展为适合 Stable Diffusion 的详细绘图提示词。"
-    "必须只输出 JSON，包含两个字段："
-    "display_cn（流畅完整的中文画面描述，给用户阅读；整合为自然语句，不要简单重复原文再堆砌）；"
-    "prompt_en（纯英文绘图提示词，用于 AI 图像生成，不含任何中文）。"
-    "要求：保留用户原意，补充主体细节、场景、风格、光影与画质关键词。"
+    "你是 AI 绘图提示词专家。将用户的简短实体词或场景描述扩展为 Stable Diffusion 提示词。"
+    '只输出 JSON：{"display_cn":"流畅中文画面描述","prompt_en":"纯英文绘图提示词"}。'
+    "保留原意，补充主体、场景、风格、光影与画质词；整合成自然语句，勿重复堆砌原文。"
 )
 
+_prompt_cache: dict[str, str] = {}
 
-async def chat_json(system_prompt: str, user_prompt: str) -> str:
-    """调用 Ollama chat API，要求返回 JSON 文本。"""
-    url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
-    payload = {
+
+def _build_ollama_options() -> dict[str, float | int]:
+    return {
+        "temperature": settings.ollama_temperature,
+        "num_predict": settings.ollama_num_predict,
+        "num_ctx": settings.ollama_num_ctx,
+    }
+
+
+def _build_chat_payload(messages: list[dict[str, str]]) -> dict:
+    return {
         "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": messages,
         "stream": False,
         "format": "json",
-        "options": {
-            "temperature": settings.ollama_temperature,
-        },
+        "keep_alive": settings.ollama_keep_alive,
+        "options": _build_ollama_options(),
     }
+
+
+async def _post_chat(payload: dict) -> str:
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
 
     try:
         async with httpx.AsyncClient(timeout=settings.ollama_timeout_seconds) as client:
@@ -64,14 +69,54 @@ async def chat_json(system_prompt: str, user_prompt: str) -> str:
     return content
 
 
+async def chat_json(system_prompt: str, user_prompt: str) -> str:
+    """调用 Ollama chat API，要求返回 JSON 文本。"""
+    payload = _build_chat_payload(
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    )
+    return await _post_chat(payload)
+
+
+async def warmup_ollama_model() -> None:
+    """后端启动时预加载模型，避免首次优化等待过久。"""
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
+    payload = {
+        "model": settings.ollama_model,
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": False,
+        "keep_alive": settings.ollama_keep_alive,
+        "options": {"num_predict": 1, "num_ctx": 512},
+    }
+
+    async with httpx.AsyncClient(timeout=settings.ollama_timeout_seconds) as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+
+
+def clear_prompt_cache() -> None:
+    _prompt_cache.clear()
+
+
 async def optimize_prompt_with_ollama(prompt: str) -> str:
     """将用户输入发送给 Ollama，返回模型输出的 JSON 文本。"""
     cleaned = prompt.strip()
     if not cleaned:
         raise OllamaError("提示词不能为空")
 
-    user_message = (
-        f"用户输入的实体/场景描述：{cleaned}\n"
-        "请根据上述内容生成 display_cn 与 prompt_en。"
-    )
-    return await chat_json(OLLAMA_SYSTEM_PROMPT, user_message)
+    cache_key = cleaned.casefold()
+    if settings.ollama_cache_enabled and cache_key in _prompt_cache:
+        return _prompt_cache[cache_key]
+
+    user_message = f"用户输入：{cleaned}"
+    content = await chat_json(OLLAMA_SYSTEM_PROMPT, user_message)
+
+    if settings.ollama_cache_enabled:
+        if len(_prompt_cache) >= settings.ollama_cache_max_items:
+            oldest_key = next(iter(_prompt_cache))
+            _prompt_cache.pop(oldest_key, None)
+        _prompt_cache[cache_key] = content
+
+    return content

@@ -1,13 +1,33 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import draw, health, history
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if (
+        settings.prompt_optimizer_provider.lower().strip() in {"ollama", "auto"}
+        and settings.ollama_warmup_on_startup
+    ):
+        try:
+            from app.services.ollama_client import warmup_ollama_model
+
+            await warmup_ollama_model()
+        except Exception:
+            pass
+
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

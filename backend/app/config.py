@@ -58,9 +58,15 @@ class Settings(BaseSettings):
     prompt_optimizer_model: str = "gpt-4o-mini"
     prompt_optimizer_timeout_seconds: float = 30.0
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen2.5:7b"
+    ollama_model: str = "qwen2.5:1.5b"
     ollama_timeout_seconds: float = 120.0
-    ollama_temperature: float = 0.7
+    ollama_temperature: float = 0.5
+    ollama_num_predict: int = 256
+    ollama_num_ctx: int = 2048
+    ollama_keep_alive: str = "30m"
+    ollama_warmup_on_startup: bool = True
+    ollama_cache_enabled: bool = True
+    ollama_cache_max_items: int = 128
 
     # 生成历史
     history_enabled: bool = True

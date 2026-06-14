@@ -235,8 +235,10 @@ IMAGE_MODEL=dall-e-3
 2. 拉取模型（推荐中文能力较好的模型）：
 
 ```powershell
-ollama pull qwen2.5:7b
+ollama pull qwen2.5:1.5b
 ```
+
+推荐 `qwen2.5:1.5b`（更快）；若显卡较强可改用 `qwen2.5:7b` 提升质量。
 
 3. 确认服务运行（安装后通常自动启动）：
 
@@ -249,16 +251,30 @@ ollama serve
 ```env
 PROMPT_OPTIMIZER_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=qwen2.5:1.5b
 ```
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PROMPT_OPTIMIZER_PROVIDER` | `ollama` | `ollama` / `openai` / `rules` |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama API 地址 |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | 使用的本地模型 |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | 本地模型，越小越快 |
 | `OLLAMA_TIMEOUT_SECONDS` | `120` | 请求超时（秒） |
+| `OLLAMA_NUM_PREDICT` | `256` | 最大生成长度，越小越快 |
+| `OLLAMA_NUM_CTX` | `2048` | 上下文窗口，越小越快 |
+| `OLLAMA_KEEP_ALIVE` | `30m` | 模型驻留内存时长，避免每次冷启动 |
+| `OLLAMA_WARMUP_ON_STARTUP` | `true` | 后端启动时预加载模型 |
+| `OLLAMA_CACHE_ENABLED` | `true` | 相同输入命中缓存，秒级返回 |
 | `PROMPT_OPTIMIZER_FALLBACK_RULES` | `true` | Ollama 失败时回退规则优化 |
+
+### 缩短等待时间
+
+1. **换小模型**：默认 `qwen2.5:1.5b`；若质量不够可试 `qwen2.5:3b` / `qwen2.5:7b`
+2. **保持模型在内存**：默认 `OLLAMA_KEEP_ALIVE=30m`，连续优化会快很多
+3. **后端启动预热**：`OLLAMA_WARMUP_ON_STARTUP=true`，首次点击不必等加载
+4. **限制输出长度**：`OLLAMA_NUM_PREDICT=256` 足够生成 JSON 提示词
+5. **有 NVIDIA 显卡**：Ollama 会自动用 GPU，速度显著快于纯 CPU
+6. **相同输入走缓存**：重复优化同一提示词几乎即时返回
 
 ### 用法
 
@@ -286,7 +302,7 @@ OLLAMA_MODEL=qwen2.5:7b
 ### Ollama 优化失败？
 
 1. 确认 Ollama 已运行：`ollama serve`
-2. 确认模型已下载：`ollama pull qwen2.5:7b`
+2. 确认模型已下载：`ollama pull qwen2.5:1.5b`
 3. 检查 `backend/.env` 中 `OLLAMA_MODEL` 与已拉取的模型名一致
 
 ### 显示「图像已生成」但预览区裂图？
