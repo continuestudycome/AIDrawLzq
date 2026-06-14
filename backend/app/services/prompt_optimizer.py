@@ -122,6 +122,63 @@ def _join_unique(parts: list[str], separator: str) -> str:
     return separator.join(dict.fromkeys(part.strip() for part in parts if part.strip()))
 
 
+def _split_cn_segments(text: str) -> list[str]:
+    return [segment.strip() for segment in re.split(r"[，,、；;]", text) if segment.strip()]
+
+
+def _expand_hint_phrases(text: str, hints: list[str]) -> list[str]:
+    """只返回原文中尚未出现的提示片段，避免重复堆砌。"""
+    expanded: list[str] = []
+    existing_segments = set(_split_cn_segments(text))
+
+    for hint in hints:
+        if hint in text:
+            continue
+
+        if "，" in hint:
+            segments = [segment.strip() for segment in hint.split("，") if segment.strip()]
+            new_segments = [
+                segment
+                for segment in segments
+                if segment not in text and segment not in existing_segments
+            ]
+            if new_segments:
+                phrase = "，".join(new_segments)
+                expanded.append(phrase)
+                existing_segments.update(new_segments)
+        elif hint not in text and hint not in existing_segments:
+            expanded.append(hint)
+            existing_segments.add(hint)
+
+    return expanded
+
+
+def _append_cn_segments(base: str, segments: list[str]) -> str:
+    result = base.strip()
+    existing = set(_split_cn_segments(result))
+
+    for segment in segments:
+        segment = segment.strip()
+        if not segment or segment in existing:
+            continue
+        result = f"{result}，{segment}" if result else segment
+        existing.update(_split_cn_segments(segment))
+
+    return result
+
+
+def _append_quality_cn(text: str) -> str:
+    if QUALITY_CN in text:
+        return text
+    return _append_cn_segments(text, [QUALITY_CN])
+
+
+def _append_quality_en(text: str) -> str:
+    if "highly detailed" in text.lower():
+        return text
+    return f"{text}, {QUALITY_EN}" if text else QUALITY_EN
+
+
 def optimize_prompt_with_rules(prompt: str) -> tuple[str, str, str]:
     """基于规则扩展提示词，返回 (optimized_cn, optimized_en, message)。"""
     original = prompt.strip()
@@ -135,22 +192,30 @@ def optimize_prompt_with_rules(prompt: str) -> tuple[str, str, str]:
     is_short = len(original) <= 12
 
     if _contains_chinese(original):
-        cn_parts = [original]
-        cn_parts.extend(subject_cn)
-        cn_parts.extend(style_cn)
-        optimized_cn = f"{_join_unique(cn_parts, '，')}，{QUALITY_CN}"
+        extra_cn = _expand_hint_phrases(original, subject_cn + style_cn)
+
+        if is_short and not extra_cn and not subject_cn and not style_cn:
+            optimized_cn = _append_quality_cn(original)
+            message = "已补充画质关键词"
+        elif is_short:
+            cn_parts = subject_cn + style_cn
+            optimized_cn = _append_quality_cn(_join_unique(cn_parts, "，"))
+            message = "已根据关键词生成中文说明与英文绘图提示词"
+        else:
+            optimized_cn = _append_cn_segments(original, extra_cn)
+            optimized_cn = _append_quality_cn(optimized_cn)
+            message = "已在原描述基础上补充细节与画质关键词，未重复已有内容"
 
         en_parts = subject_en + style_en
         if is_short and not en_parts:
             en_parts = [f"detailed image of {original}"]
-        optimized_en = f"{_join_unique(en_parts, ', ')}, {QUALITY_EN}"
-        message = "已生成中文说明与英文绘图提示词，生成图像时将使用英文版本"
+        optimized_en = _append_quality_en(_join_unique(en_parts, ", "))
     else:
         if is_short:
-            optimized_en = f"a detailed image of {original}, {QUALITY_EN}"
+            optimized_en = _append_quality_en(f"a detailed image of {original}")
             message = "已扩展英文绘图提示词"
         elif "highly detailed" not in original.lower():
-            optimized_en = f"{original}, {QUALITY_EN}"
+            optimized_en = _append_quality_en(original)
             message = "已补充英文画质关键词"
         else:
             optimized_en = original
@@ -159,6 +224,9 @@ def optimize_prompt_with_rules(prompt: str) -> tuple[str, str, str]:
         optimized_cn = optimized_en
         if message != "英文提示词已较完整":
             message = f"{message}（输入为英文，界面显示与绘图均使用英文）"
+
+    if _contains_chinese(original) and message != "英文提示词已较完整":
+        message = f"{message}，生成图像时将使用英文版本"
 
     return optimized_cn, optimized_en, message
 
@@ -196,7 +264,7 @@ async def _optimize_with_openai(prompt: str) -> tuple[str, str]:
                 "content": (
                     "你是 AI 绘图提示词专家。将用户输入扩展为适合 Stable Diffusion 的详细提示词。"
                     "必须输出 JSON，且只输出 JSON，包含两个字段："
-                    "display_cn（中文描述，给用户阅读，保留中文原意并补充画面细节、风格与画质）；"
+                    "display_cn（改写后的完整中文描述，给用户阅读；不要先重复用户原文再追加，应整合为流畅的一句或几句）；"
                     "prompt_en（纯英文绘图提示词，用于 AI 图像生成，不含任何中文）。"
                 ),
             },
