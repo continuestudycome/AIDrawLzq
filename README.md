@@ -48,7 +48,8 @@
 | Pollinations URL 构建 | 后端 `app/services/pollinations_image.py` 构建 Pollinations 图片地址（服务已收费时自动跳过） |
 | 占位图像生成 | 后端 `app/services/placeholder_image.py` 在免费服务超时/不可用时返回 SVG 占位图 |
 | 提示词优化 | 后端生成**中文展示版**（输入框）与**英文绘图版**（实际生图）；有 OpenAI Key 时可用 AI 优化 |
-| API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成请求 |
+| 生成历史 | 后端 `app/services/history_store.py` 保存时间、中英文提示词与图片到 `backend/data/history/` |
+| API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成、历史记录请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
 
 ## 开发进度
@@ -60,6 +61,7 @@
 - [x] **步骤 4 修复**：Pollinations 收费后改用 Stable Horde，后端转 data URL 修复裂图
 - [x] **提示词优化**：新增「优化提示词」按钮，扩展简短描述提升生成准确度
 - [x] **步骤 6**：后端本地 Whisper 免费语音识别（录音 → 停止 → 文字填入文本框）
+- [x] **生成历史**：自动保存生成时间、提示词与图片，支持查看与删除
 
 ## 项目结构
 
@@ -231,6 +233,9 @@ IMAGE_MODEL=dall-e-3
 | POST | `/api/optimize-prompt` | 优化提示词，返回 `optimized`（中文展示）与 `optimized_en`（英文绘图） |
 | POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
 | POST | `/api/generate` | 根据提示词生成图像 |
+| GET | `/api/history` | 获取生成历史列表 |
+| GET | `/api/history/{id}/image` | 获取历史记录中的图片 |
+| DELETE | `/api/history/{id}` | 删除一条历史记录 |
 
 ## 常见问题
 

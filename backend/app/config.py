@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     prompt_optimizer_model: str = "gpt-4o-mini"
     prompt_optimizer_timeout_seconds: float = 30.0
 
+    # 生成历史
+    history_enabled: bool = True
+    history_dir: str | None = None
+    history_max_items: int = 100
+
+    @property
+    def backend_dir(self) -> Path:
+        return _BACKEND_DIR
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import draw, health
+from app.routers import draw, health, history
 
 app = FastAPI(
     title=settings.app_name,
@@ -20,6 +20,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(draw.router)
+app.include_router(history.router)
 
 
 @app.get("/")

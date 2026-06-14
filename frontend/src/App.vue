@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { checkHealth, generateFromText, optimizePrompt, speechToText } from './api/draw'
+import {
+  checkHealth,
+  deleteHistoryItem,
+  fetchHistory,
+  generateFromText,
+  optimizePrompt,
+  speechToText,
+  type HistoryItem,
+} from './api/draw'
 
 type AppStatus = 'idle' | 'recording' | 'transcribing' | 'processing' | 'done' | 'error'
 
@@ -13,6 +21,10 @@ const errorMessage = ref('')
 const backendOnline = ref(false)
 const isOptimizing = ref(false)
 const skipTranscriptWatch = ref(false)
+const historyItems = ref<HistoryItem[]>([])
+const historyLoading = ref(false)
+const activeHistoryId = ref<string | null>(null)
+const historySidebarOpen = ref(false)
 
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
@@ -48,9 +60,52 @@ watch(transcript, () => {
   generationPrompt.value = null
 })
 
+function formatHistoryTime(iso: string): string {
+  return new Date(iso).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function cleanupRecordingStream() {
   recordingStream?.getTracks().forEach((track) => track.stop())
   recordingStream = null
+}
+
+async function loadHistory() {
+  if (!backendOnline.value) return
+
+  historyLoading.value = true
+  try {
+    const result = await fetchHistory()
+    historyItems.value = result.items
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '获取历史记录失败'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function openHistorySidebar() {
+  historySidebarOpen.value = true
+  if (backendOnline.value) {
+    void loadHistory()
+  }
+}
+
+function closeHistorySidebar() {
+  historySidebarOpen.value = false
+}
+
+function toggleHistorySidebar() {
+  if (historySidebarOpen.value) {
+    closeHistorySidebar()
+    return
+  }
+  openHistorySidebar()
 }
 
 async function startRecording() {
@@ -109,6 +164,7 @@ async function handleRecordingComplete() {
     transcript.value = speechResult.text
     generationPrompt.value = null
     skipTranscriptWatch.value = false
+    activeHistoryId.value = null
     resultMessage.value = '语音识别完成，可编辑后点击「生成图像」'
     status.value = 'idle'
   } catch (error) {
@@ -145,38 +201,154 @@ async function generateFromInput() {
   errorMessage.value = ''
   resultMessage.value = ''
   imageUrl.value = null
+  activeHistoryId.value = null
+
+  const displayPrompt = transcript.value.trim()
+  const prompt = generationPrompt.value?.trim() || displayPrompt
 
   try {
-    const prompt = generationPrompt.value?.trim() || transcript.value.trim()
-    const drawResult = await generateFromText(prompt)
+    const drawResult = await generateFromText(prompt, { displayPrompt })
     resultMessage.value = drawResult.message
     imageUrl.value = drawResult.image_url
+    activeHistoryId.value = drawResult.history_id ?? null
     status.value = 'done'
+    await loadHistory()
   } catch (error) {
     status.value = 'error'
     errorMessage.value = error instanceof Error ? error.message : '生成失败'
   }
 }
 
+function applyHistoryItem(item: HistoryItem) {
+  skipTranscriptWatch.value = true
+  transcript.value = item.display_prompt
+  generationPrompt.value =
+    item.generation_prompt !== item.display_prompt ? item.generation_prompt : null
+  skipTranscriptWatch.value = false
+  imageUrl.value = item.image_url
+  activeHistoryId.value = item.id
+  resultMessage.value = item.message || '已加载历史记录'
+  status.value = 'done'
+  errorMessage.value = ''
+
+  if (window.matchMedia('(max-width: 900px)').matches) {
+    closeHistorySidebar()
+  }
+}
+
+async function removeHistoryItem(item: HistoryItem) {
+  try {
+    await deleteHistoryItem(item.id)
+    historyItems.value = historyItems.value.filter((entry) => entry.id !== item.id)
+    if (activeHistoryId.value === item.id) {
+      activeHistoryId.value = null
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '删除历史记录失败'
+  }
+}
+
 onMounted(async () => {
   backendOnline.value = await checkHealth().catch(() => false)
+  if (backendOnline.value) {
+    await loadHistory()
+  }
 })
 </script>
 
 <template>
-  <div class="page">
-    <header class="header">
-      <div>
-        <p class="eyebrow">AI Voice Draw</p>
-        <h1>语音描述，AI 帮你画</h1>
-        <p class="subtitle">说出你想要的画面，或手动输入提示词生成图像</p>
-      </div>
-      <span class="badge" :class="{ online: backendOnline }">
-        {{ backendOnline ? '后端已连接' : '后端未连接' }}
-      </span>
-    </header>
+  <div class="app-shell">
+    <div
+      v-if="historySidebarOpen"
+      class="history-backdrop"
+      aria-hidden="true"
+      @click="closeHistorySidebar"
+    />
 
-    <main class="layout">
+    <aside class="history-sidebar" :class="{ open: historySidebarOpen }" aria-label="生成历史">
+      <div class="history-sidebar-header">
+        <div>
+          <h2>生成历史</h2>
+          <p class="history-subtitle">点击记录可重新查看</p>
+        </div>
+        <button class="history-close" type="button" aria-label="关闭历史侧边栏" @click="closeHistorySidebar">
+          ✕
+        </button>
+      </div>
+
+      <button
+        class="secondary-button history-refresh"
+        :disabled="historyLoading"
+        type="button"
+        @click="loadHistory"
+      >
+        {{ historyLoading ? '加载中…' : '刷新列表' }}
+      </button>
+
+      <div class="history-sidebar-body">
+        <div v-if="!backendOnline" class="history-empty">后端未连接，无法加载历史</div>
+        <div v-else-if="historyLoading && historyItems.length === 0" class="history-empty">正在加载历史…</div>
+        <div v-else-if="historyItems.length === 0" class="history-empty">暂无生成记录</div>
+
+        <div v-else class="history-list">
+          <article
+            v-for="item in historyItems"
+            :key="item.id"
+            class="history-card"
+            :class="{ active: activeHistoryId === item.id }"
+          >
+            <button class="history-card-main" type="button" @click="applyHistoryItem(item)">
+              <img :src="item.image_url" :alt="item.display_prompt" class="history-thumb" />
+              <div class="history-meta">
+                <time class="history-time">{{ formatHistoryTime(item.created_at) }}</time>
+                <p class="history-prompt">{{ item.display_prompt }}</p>
+                <p v-if="item.generation_prompt !== item.display_prompt" class="history-en">
+                  英文：{{ item.generation_prompt }}
+                </p>
+              </div>
+            </button>
+            <button
+              class="history-delete"
+              type="button"
+              title="删除这条记录"
+              @click.stop="removeHistoryItem(item)"
+            >
+              删除
+            </button>
+          </article>
+        </div>
+      </div>
+    </aside>
+
+    <button
+      class="history-toggle"
+      type="button"
+      :class="{ open: historySidebarOpen }"
+      :aria-expanded="historySidebarOpen"
+      aria-label="打开或关闭历史侧边栏"
+      @click="toggleHistorySidebar"
+    >
+      {{ historySidebarOpen ? '◀' : '历史' }}
+    </button>
+
+    <div class="page">
+      <header class="header">
+        <div>
+          <p class="eyebrow">AI Voice Draw</p>
+          <h1>语音描述，AI 帮你画</h1>
+          <p class="subtitle">说出你想要的画面，或手动输入提示词生成图像</p>
+        </div>
+        <div class="header-actions">
+          <button class="secondary-button history-open-btn" type="button" @click="openHistorySidebar">
+            📋 历史记录
+          </button>
+          <span class="badge" :class="{ online: backendOnline }">
+            {{ backendOnline ? '后端已连接' : '后端未连接' }}
+          </span>
+        </div>
+      </header>
+
+      <main class="layout">
       <section class="panel control-panel">
         <div class="voice-box">
           <button
@@ -234,5 +406,6 @@ onMounted(async () => {
         </div>
       </section>
     </main>
+    </div>
   </div>
 </template>

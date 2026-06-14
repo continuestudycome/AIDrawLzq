@@ -2,6 +2,7 @@ export interface DrawResponse {
   prompt: string
   image_url: string | null
   message: string
+  history_id?: string | null
 }
 
 export interface SpeechToTextResponse {
@@ -15,6 +16,22 @@ export interface OptimizePromptResponse {
   optimized_en: string
   message: string
   method: string
+}
+
+export interface HistoryItem {
+  id: string
+  created_at: string
+  display_prompt: string
+  generation_prompt: string
+  image_url: string
+  message: string
+  width: number
+  height: number
+}
+
+export interface HistoryListResponse {
+  items: HistoryItem[]
+  total: number
 }
 
 async function readApiError(response: Response, fallback: string): Promise<Error> {
@@ -55,11 +72,17 @@ export async function speechToText(audioBlob: Blob): Promise<SpeechToTextRespons
   return response.json()
 }
 
-export async function generateFromText(text: string): Promise<DrawResponse> {
+export async function generateFromText(
+  text: string,
+  options?: { displayPrompt?: string },
+): Promise<DrawResponse> {
   const response = await fetch('/api/transcript', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      display_prompt: options?.displayPrompt,
+    }),
   })
 
   if (!response.ok) {
@@ -81,4 +104,24 @@ export async function optimizePrompt(text: string): Promise<OptimizePromptRespon
   }
 
   return response.json()
+}
+
+export async function fetchHistory(limit = 50): Promise<HistoryListResponse> {
+  const response = await fetch(`/api/history?limit=${limit}`)
+
+  if (!response.ok) {
+    throw await readApiError(response, '获取历史记录失败')
+  }
+
+  return response.json()
+}
+
+export async function deleteHistoryItem(id: string): Promise<void> {
+  const response = await fetch(`/api/history/${id}`, {
+    method: 'DELETE',
+  })
+
+  if (!response.ok) {
+    throw await readApiError(response, '删除历史记录失败')
+  }
 }

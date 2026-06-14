@@ -2,7 +2,12 @@ from pydantic import BaseModel, Field
 
 
 class TranscriptRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000, description="语音识别后的文本")
+    text: str = Field(..., min_length=1, max_length=2000, description="用于绘图的提示词")
+    display_prompt: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="中文展示提示词，用于历史记录展示",
+    )
 
 
 class SpeechToTextResponse(BaseModel):
@@ -12,6 +17,11 @@ class SpeechToTextResponse(BaseModel):
 
 class DrawRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000, description="绘图提示词")
+    display_prompt: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="中文展示提示词，用于历史记录展示",
+    )
     width: int = Field(default=512, ge=256, le=1024)
     height: int = Field(default=512, ge=256, le=1024)
 
@@ -20,6 +30,7 @@ class DrawResponse(BaseModel):
     prompt: str
     image_url: str | None = None
     message: str = "ok"
+    history_id: str | None = None
 
 
 class OptimizePromptRequest(BaseModel):

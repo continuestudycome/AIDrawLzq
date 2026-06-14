@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from app.config import settings
 from app.schemas.draw import (
     DrawRequest,
     DrawResponse,
@@ -8,6 +9,7 @@ from app.schemas.draw import (
     SpeechToTextResponse,
     TranscriptRequest,
 )
+from app.services.history_store import HistoryStoreError, add_history_entry
 from app.services.image_generation import (
     ImageGenerationError,
     ImageGenerationNotConfiguredError,
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/api", tags=["draw"])
 async def _build_draw_response(
     prompt: str,
     *,
+    display_prompt: str | None = None,
     width: int = 512,
     height: int = 512,
 ) -> DrawResponse:
@@ -36,10 +39,29 @@ async def _build_draw_response(
     except ImageGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    history_id: str | None = None
+    response_image_url = image_url
+
+    if settings.history_enabled and image_url:
+        try:
+            history_item = await add_history_entry(
+                display_prompt=display_prompt or prompt,
+                generation_prompt=prompt,
+                image_url=image_url,
+                message=message,
+                width=width,
+                height=height,
+            )
+            history_id = history_item.id
+            response_image_url = history_item.image_url
+        except HistoryStoreError:
+            pass
+
     return DrawResponse(
         prompt=prompt,
-        image_url=image_url,
+        image_url=response_image_url,
         message=message,
+        history_id=history_id,
     )
 
 
@@ -82,7 +104,10 @@ async def speech_to_text(audio: UploadFile = File(...)) -> SpeechToTextResponse:
 @router.post("/transcript", response_model=DrawResponse)
 async def draw_from_transcript(payload: TranscriptRequest) -> DrawResponse:
     """根据文本生成图像。"""
-    return await _build_draw_response(payload.text)
+    return await _build_draw_response(
+        payload.text,
+        display_prompt=payload.display_prompt,
+    )
 
 
 @router.post("/generate", response_model=DrawResponse)
@@ -90,6 +115,7 @@ async def generate_image(payload: DrawRequest) -> DrawResponse:
     """根据提示词生成图像。"""
     return await _build_draw_response(
         payload.prompt,
+        display_prompt=payload.display_prompt,
         width=payload.width,
         height=payload.height,
     )
