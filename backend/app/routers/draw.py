@@ -47,13 +47,14 @@ async def _build_draw_response(
 async def optimize_prompt_endpoint(payload: OptimizePromptRequest) -> OptimizePromptResponse:
     """优化提示词，扩展为更适合 AI 绘图的描述。"""
     try:
-        optimized, message, method = await optimize_prompt(payload.text)
+        optimized_cn, optimized_en, message, method = await optimize_prompt(payload.text)
     except PromptOptimizerError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return OptimizePromptResponse(
         original=payload.text.strip(),
-        optimized=optimized,
+        optimized=optimized_cn,
+        optimized_en=optimized_en,
         message=message,
         method=method,
     )

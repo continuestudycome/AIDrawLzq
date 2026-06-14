@@ -1,7 +1,8 @@
-"""提示词优化：将简短中文描述扩展为适合 AI 绘图的详细提示词。"""
+"""提示词优化：生成中文展示版与英文绘图版。"""
 
 from __future__ import annotations
 
+import json
 import re
 
 import httpx
@@ -13,7 +14,7 @@ class PromptOptimizerError(Exception):
     """提示词优化失败。"""
 
 
-STYLE_HINTS: dict[str, str] = {
+STYLE_HINTS_EN: dict[str, str] = {
     "赛博朋克": "cyberpunk style, neon lights, futuristic city",
     "写实": "photorealistic, highly detailed",
     "卡通": "cartoon style, cute illustration",
@@ -29,7 +30,23 @@ STYLE_HINTS: dict[str, str] = {
     "可爱": "cute, adorable, kawaii",
 }
 
-SUBJECT_HINTS: dict[str, str] = {
+STYLE_HINTS_CN: dict[str, str] = {
+    "赛博朋克": "赛博朋克风格，霓虹灯光，未来都市",
+    "写实": "写实风格，高度细节",
+    "卡通": "卡通风格，可爱插画",
+    "动漫": "动漫风格，色彩鲜明",
+    "水彩": "水彩画风，柔和笔触",
+    "油画": "油画质感，厚重纹理",
+    "像素": "像素艺术，复古游戏风",
+    "科幻": "科幻氛围，未来感",
+    "奇幻": "奇幻风格，魔法氛围",
+    "古风": "中国古风，古典美学",
+    "简约": "简约构图，画面干净",
+    "暗黑": "暗黑氛围，戏剧光影",
+    "可爱": "可爱风格，萌系",
+}
+
+SUBJECT_HINTS_EN: dict[str, str] = {
     "猪": "a pig, farm animal",
     "猫": "a cat, feline",
     "狗": "a dog, canine",
@@ -57,6 +74,37 @@ SUBJECT_HINTS: dict[str, str] = {
     "城堡": "a castle, fantasy architecture",
 }
 
+SUBJECT_HINTS_CN: dict[str, str] = {
+    "猪": "猪，农场动物",
+    "猫": "猫",
+    "狗": "狗",
+    "鸡": "鸡",
+    "牛": "牛",
+    "羊": "羊",
+    "马": "马",
+    "兔": "兔子",
+    "龙": "中国龙，神话生物",
+    "鸟": "鸟，飞翔于天空",
+    "鱼": "鱼，水下场景",
+    "花": "鲜花，植物",
+    "树": "树木，自然风景",
+    "山": "山峦风景",
+    "海": "海洋，海浪与沙滩",
+    "星空": "星空，宇宙",
+    "太阳": "太阳，温暖阳光",
+    "月亮": "月亮，夜晚场景",
+    "人": "人物肖像",
+    "女孩": "女孩肖像",
+    "男孩": "男孩肖像",
+    "机器人": "机器人，机械设计",
+    "汽车": "汽车",
+    "房子": "房屋建筑",
+    "城堡": "城堡，奇幻建筑",
+}
+
+QUALITY_CN = "精细画面，主体清晰，专业光影，高清画质"
+QUALITY_EN = "highly detailed, sharp focus, professional lighting, 8k quality"
+
 
 def _contains_chinese(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text))
@@ -64,55 +112,78 @@ def _contains_chinese(text: str) -> bool:
 
 def _collect_hints(text: str, hints: dict[str, str]) -> list[str]:
     matched: list[str] = []
-    for keyword, english in hints.items():
-        if keyword in text and english not in matched:
-            matched.append(english)
+    for keyword, phrase in hints.items():
+        if keyword in text and phrase not in matched:
+            matched.append(phrase)
     return matched
 
 
-def optimize_prompt_with_rules(prompt: str) -> tuple[str, str]:
-    """基于规则扩展提示词，返回 (optimized, message)。"""
+def _join_unique(parts: list[str], separator: str) -> str:
+    return separator.join(dict.fromkeys(part.strip() for part in parts if part.strip()))
+
+
+def optimize_prompt_with_rules(prompt: str) -> tuple[str, str, str]:
+    """基于规则扩展提示词，返回 (optimized_cn, optimized_en, message)。"""
     original = prompt.strip()
     if not original:
         raise PromptOptimizerError("提示词不能为空")
 
-    style_parts = _collect_hints(original, STYLE_HINTS)
-    subject_parts = _collect_hints(original, SUBJECT_HINTS)
-
-    quality_suffix = "highly detailed, sharp focus, professional lighting, 8k quality"
+    style_cn = _collect_hints(original, STYLE_HINTS_CN)
+    subject_cn = _collect_hints(original, SUBJECT_HINTS_CN)
+    style_en = _collect_hints(original, STYLE_HINTS_EN)
+    subject_en = _collect_hints(original, SUBJECT_HINTS_EN)
     is_short = len(original) <= 12
 
     if _contains_chinese(original):
-        english_parts = subject_parts + style_parts
-        if is_short and not english_parts:
-            english_parts = [f"detailed image of {original}"]
+        cn_parts = [original]
+        cn_parts.extend(subject_cn)
+        cn_parts.extend(style_cn)
+        optimized_cn = f"{_join_unique(cn_parts, '，')}，{QUALITY_CN}"
 
-        if english_parts:
-            english_clause = ", ".join(english_parts)
-            optimized = f"{original}，{english_clause}, {quality_suffix}"
-            message = "已补充英文描述与画质关键词，提升免费模型理解准确度"
-        elif is_short:
-            optimized = f"{original}，精细画面，主体清晰，{quality_suffix}"
-            message = "已扩展简短描述并补充画质关键词"
-        else:
-            optimized = f"{original}, {quality_suffix}"
-            message = "已补充画质与构图关键词"
+        en_parts = subject_en + style_en
+        if is_short and not en_parts:
+            en_parts = [f"detailed image of {original}"]
+        optimized_en = f"{_join_unique(en_parts, ', ')}, {QUALITY_EN}"
+        message = "已生成中文说明与英文绘图提示词，生成图像时将使用英文版本"
     else:
         if is_short:
-            optimized = f"a detailed image of {original}, {quality_suffix}"
-            message = "已扩展英文短提示词"
+            optimized_en = f"a detailed image of {original}, {QUALITY_EN}"
+            message = "已扩展英文绘图提示词"
         elif "highly detailed" not in original.lower():
-            optimized = f"{original}, {quality_suffix}"
-            message = "已补充画质关键词"
+            optimized_en = f"{original}, {QUALITY_EN}"
+            message = "已补充英文画质关键词"
         else:
-            optimized = original
-            message = "提示词已较完整，仅做轻微整理"
-            return optimized, message
+            optimized_en = original
+            message = "英文提示词已较完整"
 
-    return optimized, message
+        optimized_cn = optimized_en
+        if message != "英文提示词已较完整":
+            message = f"{message}（输入为英文，界面显示与绘图均使用英文）"
+
+    return optimized_cn, optimized_en, message
 
 
-async def _optimize_with_openai(prompt: str) -> str:
+def _parse_openai_dual_prompt(content: str) -> tuple[str, str]:
+    text = content.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PromptOptimizerError("AI 返回格式无效，无法解析中英文提示词") from exc
+
+    display_cn = str(data.get("display_cn", "")).strip()
+    prompt_en = str(data.get("prompt_en", "")).strip()
+
+    if not display_cn or not prompt_en:
+        raise PromptOptimizerError("AI 未返回完整的中英文提示词")
+
+    return display_cn, prompt_en
+
+
+async def _optimize_with_openai(prompt: str) -> tuple[str, str]:
     headers = {
         "Authorization": f"Bearer {settings.openai_api_key}",
         "Content-Type": "application/json",
@@ -124,14 +195,16 @@ async def _optimize_with_openai(prompt: str) -> str:
                 "role": "system",
                 "content": (
                     "你是 AI 绘图提示词专家。将用户输入扩展为适合 Stable Diffusion 的详细提示词。"
-                    "保留中文原意，并补充英文关键词、画面细节、风格与画质描述。"
-                    "只输出优化后的提示词，不要解释。"
+                    "必须输出 JSON，且只输出 JSON，包含两个字段："
+                    "display_cn（中文描述，给用户阅读，保留中文原意并补充画面细节、风格与画质）；"
+                    "prompt_en（纯英文绘图提示词，用于 AI 图像生成，不含任何中文）。"
                 ),
             },
             {"role": "user", "content": prompt.strip()},
         ],
         "temperature": 0.7,
-        "max_tokens": 300,
+        "max_tokens": 400,
+        "response_format": {"type": "json_object"},
     }
     url = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
 
@@ -153,22 +226,27 @@ async def _optimize_with_openai(prompt: str) -> str:
     if not content:
         raise PromptOptimizerError("提示词优化结果为空")
 
-    return content
+    return _parse_openai_dual_prompt(content)
 
 
-async def optimize_prompt(prompt: str) -> tuple[str, str, str]:
-    """优化提示词，返回 (optimized, message, method)。"""
+async def optimize_prompt(prompt: str) -> tuple[str, str, str, str]:
+    """优化提示词，返回 (optimized_cn, optimized_en, message, method)。"""
     original = prompt.strip()
     if not original:
         raise PromptOptimizerError("提示词不能为空")
 
     if settings.openai_api_key and settings.prompt_optimizer_use_openai:
         try:
-            optimized = await _optimize_with_openai(original)
-            return optimized, "已使用 AI 优化提示词（OpenAI）", "openai"
+            optimized_cn, optimized_en = await _optimize_with_openai(original)
+            return (
+                optimized_cn,
+                optimized_en,
+                "已使用 AI 生成中文说明与英文绘图提示词",
+                "openai",
+            )
         except PromptOptimizerError:
             if not settings.prompt_optimizer_fallback_rules:
                 raise
 
-    optimized, message = optimize_prompt_with_rules(original)
-    return optimized, message, "rules"
+    optimized_cn, optimized_en, message = optimize_prompt_with_rules(original)
+    return optimized_cn, optimized_en, message, "rules"

@@ -28,6 +28,7 @@ class OptimizePromptRequest(BaseModel):
 
 class OptimizePromptResponse(BaseModel):
     original: str
-    optimized: str
+    optimized: str = Field(description="中文展示版，显示在输入框供用户阅读")
+    optimized_en: str = Field(description="英文绘图版，生成图像时使用")
     message: str
     method: str = "rules"

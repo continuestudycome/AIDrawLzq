@@ -140,6 +140,28 @@ h1 {
   font-size: 0.85rem;
 }
 
+.en-prompt-details {
+  margin-top: -4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.en-prompt-details summary {
+  cursor: pointer;
+  color: #cbd5e1;
+}
+
+.en-prompt-text {
+  margin: 8px 0 0;
+  color: #e2e8f0;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 .field {
   display: flex;
   flex-direction: column;

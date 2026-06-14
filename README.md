@@ -47,7 +47,7 @@
 | 图片转 data URL | 后端 `app/services/image_fetch.py` 将远程图片转为 data URL，避免浏览器裂图 |
 | Pollinations URL 构建 | 后端 `app/services/pollinations_image.py` 构建 Pollinations 图片地址（服务已收费时自动跳过） |
 | 占位图像生成 | 后端 `app/services/placeholder_image.py` 在免费服务超时/不可用时返回 SVG 占位图 |
-| 提示词优化 | 后端 `app/services/prompt_optimizer.py` 扩展简短中文为双语详细提示词；有 OpenAI Key 时可用 AI 优化 |
+| 提示词优化 | 后端生成**中文展示版**（输入框）与**英文绘图版**（实际生图）；有 OpenAI Key 时可用 AI 优化 |
 | API 编排 | 前端 `src/api/draw.ts` 封装健康检查、语音识别、提示词优化、图像生成请求 |
 | 开发代理 | Vite 将 `/api`、`/health` 代理到后端，前后端分离本地联调 |
 
@@ -228,7 +228,7 @@ IMAGE_MODEL=dall-e-3
 |------|------|------|
 | GET | `/health` | 健康检查 |
 | POST | `/api/speech-to-text` | 上传录音，本地 Whisper 或 OpenAI 识别为文本 |
-| POST | `/api/optimize-prompt` | 优化提示词，扩展为更详细的绘图描述 |
+| POST | `/api/optimize-prompt` | 优化提示词，返回 `optimized`（中文展示）与 `optimized_en`（英文绘图） |
 | POST | `/api/transcript` | 根据文本生成图像（返回 data URL 或图片地址） |
 | POST | `/api/generate` | 根据提示词生成图像 |
 

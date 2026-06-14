@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { checkHealth, generateFromText, optimizePrompt, speechToText } from './api/draw'
 
 type AppStatus = 'idle' | 'recording' | 'transcribing' | 'processing' | 'done' | 'error'
 
 const status = ref<AppStatus>('idle')
 const transcript = ref('')
+const generationPrompt = ref<string | null>(null)
 const resultMessage = ref('')
 const imageUrl = ref<string | null>(null)
 const errorMessage = ref('')
 const backendOnline = ref(false)
 const isOptimizing = ref(false)
+const skipTranscriptWatch = ref(false)
 
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
@@ -40,6 +42,11 @@ const isBusy = computed(
     status.value === 'processing' ||
     isOptimizing.value,
 )
+
+watch(transcript, () => {
+  if (skipTranscriptWatch.value) return
+  generationPrompt.value = null
+})
 
 function cleanupRecordingStream() {
   recordingStream?.getTracks().forEach((track) => track.stop())
@@ -98,7 +105,10 @@ async function handleRecordingComplete() {
     }
 
     const speechResult = await speechToText(audioBlob)
+    skipTranscriptWatch.value = true
     transcript.value = speechResult.text
+    generationPrompt.value = null
+    skipTranscriptWatch.value = false
     resultMessage.value = '语音识别完成，可编辑后点击「生成图像」'
     status.value = 'idle'
   } catch (error) {
@@ -116,7 +126,10 @@ async function optimizePromptInput() {
 
   try {
     const result = await optimizePrompt(transcript.value.trim())
+    skipTranscriptWatch.value = true
     transcript.value = result.optimized
+    generationPrompt.value = result.optimized_en
+    skipTranscriptWatch.value = false
     resultMessage.value = result.message
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '提示词优化失败'
@@ -134,7 +147,8 @@ async function generateFromInput() {
   imageUrl.value = null
 
   try {
-    const drawResult = await generateFromText(transcript.value.trim())
+    const prompt = generationPrompt.value?.trim() || transcript.value.trim()
+    const drawResult = await generateFromText(prompt)
     resultMessage.value = drawResult.message
     imageUrl.value = drawResult.image_url
     status.value = 'done'
@@ -179,13 +193,18 @@ onMounted(async () => {
         </div>
 
         <label class="field">
-          <span>识别文本 / 提示词</span>
+          <span>识别文本 / 提示词（中文说明）</span>
           <textarea
             v-model="transcript"
             rows="5"
             placeholder="例如：一只在星空下奔跑的猫，赛博朋克风格"
           />
         </label>
+
+        <details v-if="generationPrompt" class="en-prompt-details">
+          <summary>查看英文绘图提示词（生成图像时自动使用）</summary>
+          <p class="en-prompt-text">{{ generationPrompt }}</p>
+        </details>
 
         <div class="action-row">
           <button

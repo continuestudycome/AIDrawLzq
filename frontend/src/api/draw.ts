@@ -12,6 +12,7 @@ export interface SpeechToTextResponse {
 export interface OptimizePromptResponse {
   original: string
   optimized: string
+  optimized_en: string
   message: string
   method: string
 }
