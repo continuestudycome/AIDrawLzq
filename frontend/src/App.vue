@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 import {
   checkHealth,
   deleteHistoryItem,
@@ -25,6 +26,8 @@ const historyItems = ref<HistoryItem[]>([])
 const historyLoading = ref(false)
 const activeHistoryId = ref<string | null>(null)
 const historySidebarOpen = ref(false)
+const deleteConfirmItem = ref<HistoryItem | null>(null)
+const deleteLoading = ref(false)
 
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
@@ -236,15 +239,31 @@ function applyHistoryItem(item: HistoryItem) {
   }
 }
 
-async function removeHistoryItem(item: HistoryItem) {
+function requestRemoveHistoryItem(item: HistoryItem) {
+  deleteConfirmItem.value = item
+}
+
+function cancelDeleteHistory() {
+  if (deleteLoading.value) return
+  deleteConfirmItem.value = null
+}
+
+async function confirmDeleteHistory() {
+  const item = deleteConfirmItem.value
+  if (!item || deleteLoading.value) return
+
+  deleteLoading.value = true
   try {
     await deleteHistoryItem(item.id)
     historyItems.value = historyItems.value.filter((entry) => entry.id !== item.id)
     if (activeHistoryId.value === item.id) {
       activeHistoryId.value = null
     }
+    deleteConfirmItem.value = null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '删除历史记录失败'
+  } finally {
+    deleteLoading.value = false
   }
 }
 
@@ -311,7 +330,7 @@ onMounted(async () => {
               class="history-delete"
               type="button"
               title="删除这条记录"
-              @click.stop="removeHistoryItem(item)"
+              @click.stop="requestRemoveHistoryItem(item)"
             >
               删除
             </button>
@@ -407,5 +426,17 @@ onMounted(async () => {
       </section>
     </main>
     </div>
+
+    <ConfirmDialog
+      :open="deleteConfirmItem !== null"
+      title="删除这条历史记录？"
+      description="删除后将无法恢复，图片与提示词都会从本地历史中移除。"
+      :preview="deleteConfirmItem?.display_prompt ?? ''"
+      :image-url="deleteConfirmItem?.image_url ?? ''"
+      :time="deleteConfirmItem ? formatHistoryTime(deleteConfirmItem.created_at) : ''"
+      :loading="deleteLoading"
+      @confirm="confirmDeleteHistory"
+      @cancel="cancelDeleteHistory"
+    />
   </div>
 </template>
