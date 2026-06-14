@@ -12,10 +12,33 @@ class OllamaError(Exception):
 
 
 OLLAMA_SYSTEM_PROMPT = (
-    "你是 AI 绘图提示词专家。将用户的简短实体词或场景描述扩展为 Stable Diffusion 提示词。"
-    '只输出 JSON：{"display_cn":"流畅中文画面描述","prompt_en":"纯英文绘图提示词"}。'
-    "保留原意，补充主体、场景、风格、光影与画质词；整合成自然语句，勿重复堆砌原文。"
+    "你是 AI 绘图提示词专家。根据用户输入，生成适合 Stable Diffusion 的中英文绘图提示词。\n"
+    "只输出 JSON，包含 display_cn 和 prompt_en 两个字段，不要输出其它文字。\n"
+    "display_cn：完整的中文画面描述，给用户阅读。\n"
+    "prompt_en：纯英文绘图提示词，用于 AI 生图，不含中文。\n"
+    "要求：保留用户原意，补充主体、场景、风格、光影与画质细节；写成自然语句，不要重复堆砌原文。"
 )
+
+OLLAMA_FEW_SHOT_USER = "一只猪"
+OLLAMA_FEW_SHOT_ASSISTANT = (
+    '{"display_cn":"一只可爱的粉色小猪，站在阳光下的农场草地上，毛发细腻，背景有木栅栏与绿草，画面温馨写实",'
+    '"prompt_en":"a cute pink pig on a sunny farm meadow, wooden fence, green grass, warm sunlight, '
+    'photorealistic, highly detailed, soft lighting, 8k"}'
+)
+
+_PLACEHOLDER_CN = {
+    "流畅中文画面描述",
+    "中文画面描述",
+    "给用户看的中文画面描述",
+    "完整的中文画面描述",
+}
+_PLACEHOLDER_EN = {
+    "纯英文绘图提示词",
+    "英文绘图提示词",
+    "纯英文 stable diffusion 提示词",
+    "english prompt only",
+    "prompt_en",
+}
 
 _prompt_cache: dict[str, str] = {}
 
@@ -74,10 +97,25 @@ async def chat_json(system_prompt: str, user_prompt: str) -> str:
     payload = _build_chat_payload(
         [
             {"role": "system", "content": system_prompt},
+            {"role": "user", "content": OLLAMA_FEW_SHOT_USER},
+            {"role": "assistant", "content": OLLAMA_FEW_SHOT_ASSISTANT},
             {"role": "user", "content": user_prompt},
         ]
     )
     return await _post_chat(payload)
+
+
+def is_placeholder_ollama_response(display_cn: str, prompt_en: str) -> bool:
+    """检测模型是否原样复制了提示里的占位说明。"""
+    cn = display_cn.strip().casefold()
+    en = prompt_en.strip().casefold()
+    if cn in {item.casefold() for item in _PLACEHOLDER_CN}:
+        return True
+    if en in {item.casefold() for item in _PLACEHOLDER_EN}:
+        return True
+    if len(display_cn.strip()) <= 12 and "描述" in display_cn:
+        return True
+    return False
 
 
 async def warmup_ollama_model() -> None:
@@ -110,7 +148,7 @@ async def optimize_prompt_with_ollama(prompt: str) -> str:
     if settings.ollama_cache_enabled and cache_key in _prompt_cache:
         return _prompt_cache[cache_key]
 
-    user_message = f"用户输入：{cleaned}"
+    user_message = f"请为以下描述生成绘图提示词 JSON：{cleaned}"
     content = await chat_json(OLLAMA_SYSTEM_PROMPT, user_message)
 
     if settings.ollama_cache_enabled:

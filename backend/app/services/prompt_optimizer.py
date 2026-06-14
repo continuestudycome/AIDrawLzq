@@ -257,6 +257,11 @@ def _parse_dual_prompt_json(content: str) -> tuple[str, str]:
     if not display_cn or not prompt_en:
         raise PromptOptimizerError("AI 未返回完整的中英文提示词")
 
+    from app.services.ollama_client import is_placeholder_ollama_response
+
+    if is_placeholder_ollama_response(display_cn, prompt_en):
+        raise PromptOptimizerError("模型返回了占位文本而非真实优化结果")
+
     return display_cn, prompt_en
 
 
