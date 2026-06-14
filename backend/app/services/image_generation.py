@@ -1,10 +1,11 @@
-"""图像生成服务：支持 OpenAI DALL·E、Stable Horde 与 Pollinations。"""
+"""图像生成服务：支持阿里云 qwen-image-plus、OpenAI DALL·E、Stable Horde 与 Pollinations。"""
 
 from __future__ import annotations
 
 import httpx
 
 from app.config import settings
+from app.services.dashscope_image import DashScopeImageError, generate_dashscope_image_data_url
 from app.services.image_fetch import download_image_as_data_url
 from app.services.pollinations_image import build_pollinations_image_url
 from app.services.stable_horde_image import StableHordeError, generate_stable_horde_data_url
@@ -39,6 +40,12 @@ def resolve_openai_image_size(width: int, height: int) -> str:
 def resolve_image_provider() -> str:
     """解析当前应使用的图像生成提供方。"""
     provider = settings.image_provider.lower().strip()
+    if provider in {"dashscope", "qwen", "qwen-image-plus", "aliyun"}:
+        if not settings.dashscope_api_key:
+            raise ImageGenerationNotConfiguredError(
+                "IMAGE_PROVIDER=dashscope 但未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置"
+            )
+        return "dashscope"
     if provider == "openai":
         if not settings.effective_image_api_key:
             raise ImageGenerationNotConfiguredError(
@@ -48,6 +55,8 @@ def resolve_image_provider() -> str:
     if provider in {"pollinations", "stablehorde", "free"}:
         return provider
 
+    if settings.dashscope_api_key:
+        return "dashscope"
     if settings.effective_image_api_key:
         return "openai"
     return "free"
@@ -140,7 +149,7 @@ async def _generate_free_image_data_url(
         if image_url:
             return image_url, "图像已生成（Pollinations）"
         raise ImageGenerationError(
-            "Pollinations 服务不可用（可能已需付费 402），请改用 IMAGE_PROVIDER=stablehorde"
+            "Pollinations 服务不可用（可能已需付费 402），请改用 IMAGE_PROVIDER=dashscope"
         )
 
     try:
@@ -149,8 +158,7 @@ async def _generate_free_image_data_url(
     except StableHordeError as exc:
         raise ImageGenerationError(
             f"Stable Horde 生图失败：{exc}。"
-            "可尝试：1) 稍后重试 2) 清空 STABLE_HORDE_MODELS 使用任意可用模型 "
-            "3) 注册专属 Key 提升优先级 4) 配置 OpenAI DALL·E"
+            "可配置 IMAGE_PROVIDER=dashscope 与 DASHSCOPE_API_KEY 使用阿里云 qwen-image-plus"
         ) from exc
 
 
@@ -162,6 +170,13 @@ async def generate_image(
 ) -> tuple[str, str]:
     """根据提示词生成图像，返回 (image_url, message)。"""
     provider = resolve_image_provider()
+
+    if provider == "dashscope":
+        try:
+            image_url = await generate_dashscope_image_data_url(prompt, width=width, height=height)
+        except DashScopeImageError as exc:
+            raise ImageGenerationError(str(exc)) from exc
+        return image_url, f"图像已生成（阿里云 {settings.dashscope_image_model}）"
 
     if provider == "openai":
         image_url = await _generate_openai_image_url(prompt, width=width, height=height)

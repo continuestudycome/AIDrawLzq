@@ -265,6 +265,43 @@ def _parse_dual_prompt_json(content: str) -> tuple[str, str]:
     return display_cn, prompt_en
 
 
+async def _optimize_with_dashscope(prompt: str) -> tuple[str, str]:
+    from app.services.dashscope_client import DashScopeClientError, chat_completion
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 AI 绘图提示词专家。将用户输入扩展为适合 qwen-image-plus 的详细提示词。"
+                "必须输出 JSON，且只输出 JSON，包含两个字段："
+                "display_cn（改写后的完整中文描述，给用户阅读；不要先重复用户原文再追加，应整合为流畅的一句或几句）；"
+                "prompt_en（纯英文绘图提示词，用于 AI 图像生成，不含任何中文）。"
+            ),
+        },
+        {"role": "user", "content": prompt.strip()},
+    ]
+
+    try:
+        content = await chat_completion(
+            messages,
+            model=settings.dashscope_chat_model,
+            temperature=settings.dashscope_chat_temperature,
+            max_tokens=settings.dashscope_chat_max_tokens,
+            response_format={"type": "json_object"},
+            timeout_seconds=settings.prompt_optimizer_timeout_seconds,
+        )
+    except DashScopeClientError as exc:
+        raise PromptOptimizerError(str(exc)) from exc
+
+    display_cn, prompt_en = _parse_dual_prompt_json(content)
+    from app.services.ollama_client import is_placeholder_ollama_response
+
+    if is_placeholder_ollama_response(display_cn, prompt_en):
+        raise PromptOptimizerError("模型返回了占位文本而非真实优化结果")
+
+    return display_cn, prompt_en
+
+
 async def _optimize_with_ollama(prompt: str) -> tuple[str, str]:
     from app.services.ollama_client import OllamaError, optimize_prompt_with_ollama
 
@@ -334,7 +371,45 @@ async def optimize_prompt(prompt: str) -> tuple[str, str, str, str]:
         optimized_cn, optimized_en, message = optimize_prompt_with_rules(original)
         return optimized_cn, optimized_en, message, "rules"
 
-    if provider in {"ollama", "auto"}:
+    if provider in {"dashscope", "aliyun", "qwen"}:
+        try:
+            optimized_cn, optimized_en = await _optimize_with_dashscope(original)
+            return (
+                optimized_cn,
+                optimized_en,
+                f"已使用阿里云（{settings.dashscope_chat_model}）生成中文说明与英文绘图提示词",
+                "dashscope",
+            )
+        except PromptOptimizerError:
+            if not settings.prompt_optimizer_fallback_rules:
+                raise
+
+    if provider in {"ollama"}:
+        try:
+            optimized_cn, optimized_en = await _optimize_with_ollama(original)
+            return (
+                optimized_cn,
+                optimized_en,
+                f"已使用 Ollama（{settings.ollama_model}）生成中文说明与英文绘图提示词",
+                "ollama",
+            )
+        except PromptOptimizerError:
+            if not settings.prompt_optimizer_fallback_rules:
+                raise
+
+    if provider == "auto":
+        if settings.dashscope_api_key:
+            try:
+                optimized_cn, optimized_en = await _optimize_with_dashscope(original)
+                return (
+                    optimized_cn,
+                    optimized_en,
+                    f"已使用阿里云（{settings.dashscope_chat_model}）生成中文说明与英文绘图提示词",
+                    "dashscope",
+                )
+            except PromptOptimizerError:
+                if not settings.prompt_optimizer_fallback_rules:
+                    raise
         try:
             optimized_cn, optimized_en = await _optimize_with_ollama(original)
             return (

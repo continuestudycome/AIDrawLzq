@@ -6,7 +6,10 @@ from app.services.image_generation import (
     ImageGenerationNotConfiguredError,
     resolve_image_provider,
 )
-from app.services.speech_recognition import resolve_speech_provider
+from app.services.speech_recognition import (
+    SpeechRecognitionNotConfiguredError,
+    resolve_speech_provider,
+)
 
 router = APIRouter(tags=["health"])
 
@@ -14,6 +17,8 @@ router = APIRouter(tags=["health"])
 async def _check_ollama_available() -> bool | None:
     provider = settings.prompt_optimizer_provider.lower().strip()
     if provider not in {"ollama", "auto"}:
+        return None
+    if provider == "auto" and settings.dashscope_api_key:
         return None
 
     url = f"{settings.ollama_base_url.rstrip('/')}/api/tags"
@@ -32,11 +37,17 @@ async def health_check() -> dict[str, str | bool | None]:
     except ImageGenerationNotConfiguredError:
         image_provider = "misconfigured"
 
+    try:
+        speech_provider = resolve_speech_provider()
+    except SpeechRecognitionNotConfiguredError:
+        speech_provider = "misconfigured"
+
     return {
         "status": "ok",
-        "speech_provider": resolve_speech_provider(),
+        "speech_provider": speech_provider,
         "image_provider": image_provider,
         "prompt_optimizer": settings.prompt_optimizer_provider,
         "history_enabled": settings.history_enabled,
+        "dashscope_configured": bool(settings.dashscope_api_key),
         "ollama_available": await _check_ollama_available(),
     }

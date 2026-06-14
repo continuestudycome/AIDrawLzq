@@ -7,12 +7,18 @@ from app.config import settings
 from app.routers import draw, health, history
 
 
+def _should_warmup_ollama() -> bool:
+    if not settings.ollama_warmup_on_startup:
+        return False
+    provider = settings.prompt_optimizer_provider.lower().strip()
+    if provider == "ollama":
+        return True
+    return provider == "auto" and not settings.dashscope_api_key
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if (
-        settings.prompt_optimizer_provider.lower().strip() in {"ollama", "auto"}
-        and settings.ollama_warmup_on_startup
-    ):
+    if _should_warmup_ollama():
         try:
             from app.services.ollama_client import warmup_ollama_model
 

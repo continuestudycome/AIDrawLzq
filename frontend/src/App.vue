@@ -70,7 +70,7 @@ const statusText = computed(() => {
     case 'transcribing':
       return '正在识别语音…'
     case 'processing':
-      return '正在生成图像，免费服务可能需要 1-3 分钟…'
+      return '正在生成图像，通常需要 10–60 秒…'
     case 'done':
       return '完成'
     case 'error':
@@ -258,7 +258,7 @@ onMounted(async () => {
             </button>
             <p class="status-text">{{ statusText }}</p>
             <p v-if="status === 'recording'" class="speech-hint">说完后再次点击 ■ 停止录音</p>
-            <p v-else class="speech-hint">本地 Whisper 免费识别（需后端运行）</p>
+            <p v-else class="speech-hint">阿里云语音识别（qwen3-asr-flash）</p>
           </div>
 
           <label class="field">
@@ -276,7 +276,7 @@ onMounted(async () => {
           </details>
 
           <p v-if="suggestOptimizeBeforeGenerate" class="speech-hint">
-            建议先点「优化提示词」生成英文版再绘图，免费模型对英文关键词理解更好
+            建议先点「优化提示词」再绘图，可获得更完整的中英文描述
           </p>
 
           <div class="action-row">

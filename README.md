@@ -1,6 +1,6 @@
 # AI 语音绘图
 
-前后端分离的 AI 语音绘图工具：说出或输入画面描述，本地 Whisper 识别语音，Ollama 优化提示词，Stable Horde 免费生图，并自动保存历史记录。
+前后端分离的 AI 语音绘图工具：说出或输入画面描述，**阿里云百炼** 负责语音识别、提示词优化与图像生成，并自动保存历史记录。
 
 **仓库**：https://github.com/continuestudycome/AIDrawLzq
 
@@ -8,10 +8,12 @@
 
 | 能力 | 说明 | 默认方案 | 费用 |
 |------|------|----------|------|
-| 语音输入 | 浏览器录音 → 后端识别 | 本地 faster-whisper | 免费 |
-| 提示词优化 | 短描述扩展为中英文绘图提示词 | Ollama `qwen2.5:7b` | 免费（本地） |
-| 图像生成 | 文本 → 图片 | Stable Horde | 免费（排队） |
+| 语音输入 | 浏览器录音 → 后端识别 | 阿里云 `qwen3-asr-flash` | 按量计费 |
+| 提示词优化 | 短描述扩展为中英文绘图提示词 | 阿里云 `qwen-plus` | 按量计费 |
+| 图像生成 | 文本 → 图片 | 阿里云 `qwen-image-plus` | 按量计费 |
 | 生成历史 | 时间、提示词、图片本地持久化 | `backend/data/history/` | 免费 |
+
+> **一个 Key 搞定**：`DASHSCOPE_API_KEY` 同时用于语音识别、提示词优化和图像生成。
 
 ## 推荐工作流
 
@@ -20,12 +22,12 @@
     ↓
 点击「✨ 优化提示词」（生成中文展示 + 英文绘图版）
     ↓
-点击「生成图像」（使用英文版，等待 1–3 分钟）
+点击「生成图像」（通常 10–60 秒）
     ↓
 预览区显示结果，左侧「历史」可回看
 ```
 
-> **重要**：Stable Horde 免费模型主要理解**英文关键词**。请尽量先优化提示词，不要直接用中文生图。
+> **提示**：`qwen-image-plus` 支持中英文提示词。仍建议先「优化提示词」以获得更稳定的画面描述。
 
 ## 快速开始
 
@@ -41,8 +43,9 @@ python -m venv .venv
 # 安装依赖
 pip install -r requirements.txt
 
-# 复制环境变量（无 API Key 也可使用 Stable Horde + 本地 Whisper）
+# 复制环境变量（需配置阿里云 DashScope API Key）
 copy .env.example .env
+# 编辑 .env，填入 DASHSCOPE_API_KEY
 
 # 启动服务
 .\.venv\Scripts\uvicorn.exe app.main:app --reload --host 127.0.0.1 --port 8000
@@ -65,13 +68,27 @@ npm run dev
 
 > **注意**：请确保 8000 端口只运行**一个**后端进程，避免旧进程返回过期响应。修改 `backend/.env` 后需**重启后端**。
 
-### 3. 可选依赖
+### 3. 配置阿里云 Key
 
-| 组件 | 何时需要 | 安装方式 |
-|------|----------|----------|
-| Whisper 模型 | 首次语音识别 | `python scripts/download_whisper_model.py` |
-| Ollama | 提示词优化 | [ollama.com](https://ollama.com/) → `ollama pull qwen2.5:7b` |
-| OpenAI Key | DALL·E / Whisper API | 在 `.env` 配置 `OPENAI_API_KEY` |
+编辑 `backend/.env`：
+
+```env
+DASHSCOPE_API_KEY=sk-你的真实Key
+SPEECH_PROVIDER=dashscope
+PROMPT_OPTIMIZER_PROVIDER=dashscope
+IMAGE_PROVIDER=dashscope
+DASHSCOPE_SPEECH_MODEL=qwen3-asr-flash
+DASHSCOPE_CHAT_MODEL=qwen-plus
+DASHSCOPE_IMAGE_MODEL=qwen-image-plus
+```
+
+### 4. 可选本地依赖（备选方案）
+
+| 组件 | 何时需要 | 说明 |
+|------|----------|------|
+| 本地 Whisper | `SPEECH_PROVIDER=local` | 免费离线，需下载模型 |
+| Ollama | `PROMPT_OPTIMIZER_PROVIDER=ollama` | 免费本地优化 |
+| OpenAI Key | `IMAGE_PROVIDER=openai` | DALL·E 生图 |
 
 ## 项目结构
 
@@ -91,6 +108,7 @@ npm run dev
 │   │       ├── local_speech_recognition.py
 │   │       ├── ollama_client.py
 │   │       ├── prompt_optimizer.py
+│   │       ├── dashscope_image.py  # 阿里云 qwen-image-plus
 │   │       ├── stable_horde_image.py
 │   │       ├── image_generation.py
 │   │       └── history_store.py
@@ -117,59 +135,58 @@ npm run dev
 
 所有配置项写在 `backend/.env`，完整示例见 `backend/.env.example`。
 
-### 语音识别（默认：本地 Whisper，免费）
+### 语音识别（默认：阿里云 qwen3-asr-flash）
+
+```env
+SPEECH_PROVIDER=dashscope
+DASHSCOPE_SPEECH_MODEL=qwen3-asr-flash
+```
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `SPEECH_PROVIDER` | `dashscope` | `dashscope` / `local` / `openai` / `auto` |
+| `DASHSCOPE_SPEECH_MODEL` | `qwen3-asr-flash` | 录音文件识别，支持中英文 |
+| `DASHSCOPE_ASR_ENABLE_ITN` | `false` | 是否开启逆文本归一化 |
+| `SPEECH_TIMEOUT_SECONDS` | `60` | 识别请求超时（秒） |
+
+**本地 Whisper 备选**：
 
 ```env
 SPEECH_PROVIDER=local
 WHISPER_LOCAL_MODEL=base
-HUGGINGFACE_ENDPOINT=https://hf-mirror.com
-HUGGINGFACE_HUB_DISABLE_SSL=true
 ```
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `SPEECH_PROVIDER` | `local` | `local` / `openai` / `auto` |
-| `WHISPER_LOCAL_MODEL` | `base` | `tiny`（快）/ `base`（推荐）/ `small` |
-| `WHISPER_LOCAL_MODEL_PATH` | （空） | 本地模型目录，跳过在线下载 |
-| `HUGGINGFACE_ENDPOINT` | `https://hf-mirror.com` | Hugging Face 国内镜像 |
-| `HUGGINGFACE_HUB_DISABLE_SSL` | `true` | 解决 Windows SSL 证书问题 |
+### 图像生成（默认：阿里云 qwen-image-plus）
 
-**预下载 Whisper 模型（推荐）**：
-
-```powershell
-cd backend
-.\.venv\Scripts\python.exe scripts\download_whisper_model.py
-```
-
-完成后在 `.env` 设置脚本输出的 `WHISPER_LOCAL_MODEL_PATH`。
-
-### 图像生成（默认：Stable Horde，免费）
+1. 登录 [阿里云百炼](https://bailian.console.aliyun.com/) 获取 API Key
+2. 在 `backend/.env` 配置：
 
 ```env
-IMAGE_PROVIDER=stablehorde
-STABLE_HORDE_MODELS=
-STABLE_HORDE_STEPS=28
+IMAGE_PROVIDER=dashscope
+DASHSCOPE_API_KEY=sk-your-dashscope-key
+DASHSCOPE_IMAGE_MODEL=qwen-image-plus
 ```
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `IMAGE_PROVIDER` | `stablehorde` | `stablehorde` / `openai` / `auto` / `pollinations` |
-| `STABLE_HORDE_API_KEY` | `0000000000` | 匿名 Key；[注册](https://stablehorde.net/register) 后可换专属 Key 提升优先级 |
-| `STABLE_HORDE_MAX_WAIT_SECONDS` | `180` | 免费队列最长等待（秒） |
-| `STABLE_HORDE_STEPS` | `28` | 生成步数 |
-| `STABLE_HORDE_MODELS` | （留空） | 指定模型名，逗号分隔；**留空**使用任意可用 worker（匿名 Key 推荐） |
-| `STABLE_HORDE_CONNECT_TIMEOUT_SECONDS` | `30` | 连接超时（秒） |
-| `STABLE_HORDE_REQUEST_TIMEOUT_SECONDS` | `90` | 单次请求超时（秒） |
-| `STABLE_HORDE_NEGATIVE_PROMPT` | （内置） | 负面提示词，过滤低质量结果 |
+| `IMAGE_PROVIDER` | `dashscope` | `dashscope` / `openai` / `stablehorde` / `auto` |
+| `DASHSCOPE_API_KEY` | （空） | 百炼 API Key，**必填** |
+| `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/api/v1` | 北京地域；国际版用 `dashscope-intl.aliyuncs.com` |
+| `DASHSCOPE_IMAGE_MODEL` | `qwen-image-plus` | 文生图模型 |
+| `DASHSCOPE_IMAGE_SIZE` | `1328*1328` | 默认正方形；也支持 `1664*928` 等 |
+| `DASHSCOPE_PROMPT_EXTEND` | `true` | 是否开启提示词智能改写 |
+| `DASHSCOPE_WATERMARK` | `false` | 是否添加「Qwen-Image」水印 |
+| `DASHSCOPE_MAX_WAIT_SECONDS` | `120` | 异步任务最长等待（秒） |
+| `DASHSCOPE_POLL_INTERVAL` | `5` | 轮询间隔（秒） |
 
 提供方说明：
 
 | 值 | 说明 |
 |----|------|
-| `stablehorde` / `free` | **推荐**。Stable Horde 免费生成，排队约 1–3 分钟 |
-| `auto` | 有 OpenAI Key 用 DALL·E，否则走 Stable Horde |
+| `dashscope` / `qwen` | **推荐**。阿里云 qwen-image-plus，国内可用，通常 10–60 秒 |
+| `auto` | 有 DashScope Key 用 qwen-image-plus，否则有 OpenAI Key 用 DALL·E，否则 Stable Horde |
 | `openai` | 强制 DALL·E（需 Key） |
-| `pollinations` | 已返回 402 需付费，不推荐 |
+| `stablehorde` / `free` | Stable Horde 免费（排队慢，备选） |
 
 **OpenAI DALL·E 示例**：
 
@@ -179,29 +196,34 @@ IMAGE_PROVIDER=openai
 IMAGE_MODEL=dall-e-3
 ```
 
-### 提示词优化（默认：Ollama，免费）
+**Stable Horde 备选（免费）**：
 
 ```env
-PROMPT_OPTIMIZER_PROVIDER=ollama
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5:7b
-OLLAMA_KEEP_ALIVE=30m
-OLLAMA_WARMUP_ON_STARTUP=true
+IMAGE_PROVIDER=stablehorde
+STABLE_HORDE_MODELS=
+```
+
+### 提示词优化（默认：阿里云 qwen-plus）
+
+```env
+PROMPT_OPTIMIZER_PROVIDER=dashscope
+DASHSCOPE_CHAT_MODEL=qwen-plus
 ```
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `PROMPT_OPTIMIZER_PROVIDER` | `ollama` | `ollama` / `openai` / `rules` |
-| `OLLAMA_MODEL` | `qwen2.5:7b` | 推荐；追求速度可换 `qwen2.5:3b` |
-| `OLLAMA_NUM_PREDICT` | `256` | 最大生成长度 |
-| `OLLAMA_CACHE_ENABLED` | `true` | 相同输入命中缓存 |
-| `PROMPT_OPTIMIZER_FALLBACK_RULES` | `true` | Ollama 失败时回退规则优化 |
+| `PROMPT_OPTIMIZER_PROVIDER` | `dashscope` | `dashscope` / `ollama` / `openai` / `rules` / `auto` |
+| `DASHSCOPE_CHAT_MODEL` | `qwen-plus` | 通义千问对话模型，用于扩展提示词 |
+| `DASHSCOPE_CHAT_TEMPERATURE` | `0.5` | 生成温度 |
+| `DASHSCOPE_CHAT_MAX_TOKENS` | `512` | 最大输出长度 |
+| `PROMPT_OPTIMIZER_FALLBACK_RULES` | `true` | 云端失败时回退规则优化 |
 
-安装 Ollama 并拉取模型：
+**Ollama 本地备选**：
 
-```powershell
+```env
+PROMPT_OPTIMIZER_PROVIDER=ollama
+OLLAMA_MODEL=qwen2.5:7b
 ollama pull qwen2.5:7b
-ollama serve   # 通常安装后已自动运行
 ```
 
 ### 生成历史
@@ -256,26 +278,18 @@ HISTORY_MAX_ITEMS=100
 
 按顺序排查：
 
-1. **是否先点了「优化提示词」？** 中文直出效果差且易失败，应使用英文 `optimized_en` 生图
-2. **是否等待足够久？** 免费队列通常需 **1–3 分钟**，界面会显示「正在生成图像…」
-3. **Stable Horde 连接失败**（`All connection attempts failed`）  
-   - 服务器在境外，国内网络可能不稳定  
-   - 检查能否访问 https://stablehorde.net  
-   - 换网络、开代理，或稍后重试（后端已内置自动重试）  
-   - 或改用 OpenAI DALL·E
-4. **排队超时**（`>180 秒`）  
-   - 确认 `.env` 中 `STABLE_HORDE_MODELS` **留空**（不要锁 `Deliberate` 等热门模型）  
-   - 或注册专属 Key 提升优先级  
-   - 可适当增大 `STABLE_HORDE_MAX_WAIT_SECONDS`
+1. **是否配置了 API Key？** 在 `backend/.env` 设置 `DASHSCOPE_API_KEY` 并 `IMAGE_PROVIDER=dashscope`，重启后端
+2. **Key 是否有效？** 报错 `InvalidApiKey` 请到 [百炼控制台](https://bailian.console.aliyun.com/) 重新获取
+3. **是否先优化提示词？** 建议先点「优化提示词」获得更完整描述
+4. **访问 `/health`** 确认 `image_provider` 为 `dashscope`，且后端已连接
 
 ### 生成结果和描述差很多？
 
 | 原因 | 处理 |
 |------|------|
-| 未优化，直接用中文生图 | 先「优化提示词」，确认英文版含主体词（如 `pig`、`cat`） |
-| 指定热门模型排队过久 | 清空 `STABLE_HORDE_MODELS` |
-| 提示词太抽象 | 补充场景、风格、光线等具体描述 |
-| 免费模型能力有限 | 注册 Stable Horde Key 或配置 OpenAI DALL·E |
+| 提示词太简短 | 先「优化提示词」，补充场景、风格、光线 |
+| 智能改写不符合预期 | `.env` 设置 `DASHSCOPE_PROMPT_EXTEND=false`，自行写详细提示词 |
+| 需要更高质量 | 可尝试 `qwen-image-max` 等更强模型 |
 
 ### Ollama 优化失败？
 
@@ -287,19 +301,13 @@ HISTORY_MAX_ITEMS=100
 ### 语音识别没反应？
 
 1. 右上角应显示「**后端已连接**」
-2. 点击 🎤 开始 → 说话 → **再点 ■ 停止**（需点两次）
-3. 首次使用需下载 Whisper 模型，请耐心等待
-4. 若报 SSL 错误，设置 `HUGGINGFACE_ENDPOINT` 并预下载模型（见上文）
+2. 确认 `DASHSCOPE_API_KEY` 已配置且 `SPEECH_PROVIDER=dashscope`
+3. 点击 🎤 开始 → 说话 → **再点 ■ 停止**（需点两次）
+4. 录音时长不超过 5 分钟，文件建议小于 10MB
 
 ### 预览区裂图？
 
-Pollinations 已返回 402 需付费。请确认：
-
-```env
-IMAGE_PROVIDER=stablehorde
-```
-
-后端会将远程图片下载为 **data URL** 再返回，避免浏览器无法加载外链。
+后端会将远程图片下载为 **data URL** 再返回。若仍裂图，检查 `DASHSCOPE_API_KEY` 是否有效，或查看后端日志中的下载错误。
 
 ## 开发与测试
 
@@ -323,19 +331,20 @@ cd backend
 
 | 服务 | 用途 | 是否需要 Key |
 |------|------|--------------|
-| [Stable Horde](https://stablehorde.net/) | 免费文本生图 | 否（匿名 Key） |
+| [阿里云百炼 DashScope](https://bailian.console.aliyun.com/) | qwen-image-plus 文生图 | 是 |
 | [Ollama](https://ollama.com/) | 本地提示词优化 | 否 |
-| [OpenAI](https://platform.openai.com/) | Whisper / DALL·E | 是 |
-| [Pollinations.ai](https://pollinations.ai/) | 文本生图 | 已收费，不推荐 |
+| [OpenAI](https://platform.openai.com/) | Whisper / DALL·E（可选） | 是 |
+| [Stable Horde](https://stablehorde.net/) | 免费文本生图（备选） | 否 |
 
 ## 开发进度
 
-- [x] 占位图 → OpenAI DALL·E → Pollinations → **Stable Horde** 免费生图
+- [x] 占位图 → OpenAI DALL·E → Pollinations → Stable Horde → **阿里云 qwen-image-plus**
 - [x] 本地 Whisper 语音识别（MediaRecorder + faster-whisper）
 - [x] Ollama 提示词优化（中英文双版本）
 - [x] 生成历史（侧边栏、删除确认、本地持久化）
 - [x] 架构重构（`draw_pipeline`、前端 composables、`/api/generate` 主接口、health 增强、pytest）
-- [x] Stable Horde 连接重试、超时配置优化
+- [x] Stable Horde 连接重试（备选方案）
+- [x] 接入阿里云 DashScope `qwen-image-plus` 文生图
 
 ## 下一步
 

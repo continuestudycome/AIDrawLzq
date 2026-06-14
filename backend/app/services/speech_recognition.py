@@ -1,10 +1,11 @@
-"""语音识别服务：支持本地 Whisper 与 OpenAI Whisper API。"""
+"""语音识别服务：支持阿里云 DashScope、本地 Whisper 与 OpenAI Whisper API。"""
 
 from __future__ import annotations
 
 import httpx
 
 from app.config import settings
+from app.services.dashscope_speech import DashScopeSpeechError, transcribe_dashscope_audio
 from app.services.local_speech_recognition import (
     LocalSpeechRecognitionError,
     transcribe_local_audio,
@@ -69,10 +70,22 @@ async def _transcribe_openai_audio(
 
 def resolve_speech_provider() -> str:
     provider = settings.speech_provider.lower().strip()
+    if provider in {"dashscope", "aliyun", "qwen"}:
+        if not settings.dashscope_api_key:
+            raise SpeechRecognitionNotConfiguredError(
+                "SPEECH_PROVIDER=dashscope 但未配置 DASHSCOPE_API_KEY，请在 backend/.env 中设置"
+            )
+        return "dashscope"
     if provider in {"local", "openai"}:
         return provider
     if provider == "auto":
-        return "openai" if settings.openai_api_key else "local"
+        if settings.dashscope_api_key:
+            return "dashscope"
+        if settings.openai_api_key:
+            return "openai"
+        return "local"
+    if settings.dashscope_api_key:
+        return "dashscope"
     if settings.openai_api_key:
         return "openai"
     return "local"
@@ -86,6 +99,16 @@ async def transcribe_audio(
 ) -> tuple[str, float | None]:
     """将音频识别为文本，返回 (text, confidence)。"""
     provider = resolve_speech_provider()
+
+    if provider == "dashscope":
+        try:
+            return await transcribe_dashscope_audio(
+                audio_bytes,
+                filename=filename,
+                content_type=content_type,
+            )
+        except DashScopeSpeechError as exc:
+            raise SpeechRecognitionError(str(exc)) from exc
 
     if provider == "openai":
         return await _transcribe_openai_audio(

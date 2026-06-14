@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # 语音识别（local=本地 Whisper 免费 / openai=Whisper API）
-    speech_provider: str = "local"
+    # 语音识别（dashscope=阿里云 qwen3-asr-flash / local=本地 Whisper / openai=Whisper API）
+    speech_provider: str = "dashscope"
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     speech_model: str = "whisper-1"
@@ -34,14 +34,35 @@ class Settings(BaseSettings):
     huggingface_endpoint: str = "https://hf-mirror.com"
     huggingface_hub_disable_ssl: bool = True
 
-    # 图像生成（stablehorde=Stable Horde 免费 / openai=OpenAI / auto=有 Key 用 OpenAI 否则 Stable Horde）
-    image_provider: str = "stablehorde"
+    # 图像生成（dashscope=阿里云 qwen-image-plus / openai=OpenAI / stablehorde=免费）
+    image_provider: str = "dashscope"
     image_api_key: str | None = None
     image_model: str = "dall-e-3"
     image_quality: str = "standard"
     image_timeout_seconds: float = 120.0
     pollinations_base_url: str = "https://image.pollinations.ai"
     pollinations_model: str | None = None
+
+    # 阿里云百炼 DashScope 文生图（qwen-image-plus）
+    dashscope_api_key: str | None = None
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/api/v1"
+    dashscope_image_model: str = "qwen-image-plus"
+    dashscope_image_size: str = "1328*1328"
+    dashscope_negative_prompt: str = (
+        "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，文字模糊，扭曲，水印"
+    )
+    dashscope_prompt_extend: bool = True
+    dashscope_watermark: bool = False
+    dashscope_poll_interval: float = 5.0
+    dashscope_max_wait_seconds: float = 120.0
+    dashscope_connect_timeout_seconds: float = 30.0
+    dashscope_request_timeout_seconds: float = 60.0
+    dashscope_compatible_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    dashscope_chat_model: str = "qwen-plus"
+    dashscope_speech_model: str = "qwen3-asr-flash"
+    dashscope_chat_temperature: float = 0.5
+    dashscope_chat_max_tokens: int = 512
+    dashscope_asr_enable_itn: bool = False
 
     # Stable Horde 免费图像生成（无需注册，匿名 Key）
     stable_horde_api_key: str = "0000000000"
@@ -57,8 +78,8 @@ class Settings(BaseSettings):
         "extra limbs, text, watermark, logo, signature, cropped, worst quality"
     )
 
-    # 提示词优化（ollama=本地 Ollama / openai=OpenAI / rules=规则）
-    prompt_optimizer_provider: str = "ollama"
+    # 提示词优化（dashscope=阿里云通义千问 / ollama=本地 / openai=OpenAI / rules=规则）
+    prompt_optimizer_provider: str = "dashscope"
     prompt_optimizer_fallback_rules: bool = True
     prompt_optimizer_model: str = "gpt-4o-mini"
     prompt_optimizer_timeout_seconds: float = 30.0

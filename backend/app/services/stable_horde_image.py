@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import httpx
 
@@ -10,6 +11,7 @@ from app.config import settings
 from app.services.image_fetch import download_image_as_data_url
 
 _REQUEST_RETRIES = 4
+_POLL_REQUEST_RETRIES = 2
 _RETRY_BACKOFF_SECONDS = (2.0, 4.0, 8.0)
 
 
@@ -17,9 +19,9 @@ class StableHordeError(Exception):
     """Stable Horde 调用失败。"""
 
 
-def _build_horde_client() -> httpx.AsyncClient:
+def _build_horde_client(*, read_timeout: float | None = None) -> httpx.AsyncClient:
     timeout = httpx.Timeout(
-        settings.stable_horde_request_timeout_seconds,
+        read_timeout or settings.stable_horde_request_timeout_seconds,
         connect=settings.stable_horde_connect_timeout_seconds,
     )
     return httpx.AsyncClient(
@@ -34,16 +36,18 @@ async def _request_with_retry(
     client: httpx.AsyncClient,
     method: str,
     url: str,
+    *,
+    max_attempts: int = _REQUEST_RETRIES,
     **kwargs,
 ) -> httpx.Response:
     last_error: httpx.RequestError | None = None
 
-    for attempt in range(_REQUEST_RETRIES):
+    for attempt in range(max_attempts):
         try:
             return await client.request(method, url, **kwargs)
         except httpx.RequestError as exc:
             last_error = exc
-            if attempt >= _REQUEST_RETRIES - 1:
+            if attempt >= max_attempts - 1:
                 break
             await asyncio.sleep(_RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)])
 
@@ -103,30 +107,33 @@ async def generate_stable_horde_data_url(
                 raise StableHordeError("Stable Horde 未返回任务 ID")
 
             poll_headers = {"apikey": settings.stable_horde_api_key}
-            elapsed = 0.0
-            while elapsed < settings.stable_horde_max_wait_seconds:
-                check = await _request_with_retry(
-                    client,
-                    "GET",
-                    f"{base_url}/generate/check/{job_id}",
-                    headers=poll_headers,
-                )
-                if check.status_code >= 400:
-                    detail = check.text.strip() or check.reason_phrase
-                    raise StableHordeError(f"查询任务失败 ({check.status_code}): {detail}")
+            deadline = time.monotonic() + settings.stable_horde_max_wait_seconds
+            poll_client = _build_horde_client(read_timeout=30.0)
 
-                check_data = check.json()
-                if check_data.get("faulted"):
-                    raise StableHordeError("Stable Horde 生成任务失败")
-                if check_data.get("done"):
-                    break
+            async with poll_client:
+                while time.monotonic() < deadline:
+                    check = await _request_with_retry(
+                        poll_client,
+                        "GET",
+                        f"{base_url}/generate/check/{job_id}",
+                        headers=poll_headers,
+                        max_attempts=_POLL_REQUEST_RETRIES,
+                    )
+                    if check.status_code >= 400:
+                        detail = check.text.strip() or check.reason_phrase
+                        raise StableHordeError(f"查询任务失败 ({check.status_code}): {detail}")
 
-                await asyncio.sleep(settings.stable_horde_poll_interval)
-                elapsed += settings.stable_horde_poll_interval
-            else:
-                raise StableHordeError(
-                    f"免费队列等待超时（>{int(settings.stable_horde_max_wait_seconds)} 秒），请稍后重试"
-                )
+                    check_data = check.json()
+                    if check_data.get("faulted"):
+                        raise StableHordeError("Stable Horde 生成任务失败")
+                    if check_data.get("done"):
+                        break
+
+                    await asyncio.sleep(settings.stable_horde_poll_interval)
+                else:
+                    raise StableHordeError(
+                        f"免费队列等待超时（>{int(settings.stable_horde_max_wait_seconds)} 秒），请稍后重试"
+                    )
 
             status = await _request_with_retry(
                 client,
